@@ -51,7 +51,6 @@ export function TerminalPaneNativeChatPortal({
           agent={structuredChatAgent}
           isVisible={isRendererVisible}
           target={structuredChatTarget}
-          allowFileUriLinks
           orchestrationDispatchStatus={chatPaneDispatchStatus}
         />
       ) : (

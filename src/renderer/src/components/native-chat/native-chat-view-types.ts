@@ -41,7 +41,6 @@ export type NativeChatStructuredViewProps = NativeChatOrchestrationProps & {
   target: RuntimeClientTarget
   agent: AgentType
   isVisible: boolean
-  allowFileUriLinks: boolean
 }
 
 export type NativeChatResolvedViewProps = NativeChatOrchestrationProps & {

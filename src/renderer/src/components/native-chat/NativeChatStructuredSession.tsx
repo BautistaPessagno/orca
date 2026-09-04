@@ -34,7 +34,6 @@ export function NativeChatStructuredSession(props: {
   target: RuntimeClientTarget
   agent: AgentType
   isVisible: boolean
-  allowFileUriLinks: boolean
   orchestrationDispatchStatus?: AgentStatusOrchestrationContext['dispatchStatus']
 }): React.JSX.Element {
   const controller = useStructuredAgentSession(props)
@@ -82,7 +81,7 @@ export function NativeChatStructuredSession(props: {
   const fontScale = useNativeChatFontScale(viewState.kind === 'ready')
   const fileLinkContext = useNativeChatFileLinkContext(props.tabId)
   const imageRuntimeContext = useNativeChatImageRuntimeContext(props.tabId)
-  const fileLinkClick = useNativeChatFileLinkClick(props.allowFileUriLinks ? fileLinkContext : null)
+  const fileLinkClick = useNativeChatFileLinkClick(fileLinkContext)
   const prompt = controller.prompts[0] ?? null
   const questionBody = prompt?.body.kind === 'question' ? prompt.body : null
   const retryableOutboxEntry =
