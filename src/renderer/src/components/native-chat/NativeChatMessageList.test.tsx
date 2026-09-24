@@ -117,7 +117,7 @@ describe('NativeChatMessageList assistant messages', () => {
     expect(screen.queryByText('Thinking')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Toggle turn details' })).toBeNull()
     expect(screen.queryByText('Running sleep 5')).toBeNull()
-    expect(document.querySelectorAll('.animate-bounce')).toHaveLength(3)
+    expect(document.querySelectorAll('.native-chat-loading-orb')).toHaveLength(1)
   })
 
   it('keeps the current tool live when a stale completed lifecycle meets active hook state', () => {
@@ -180,9 +180,9 @@ describe('NativeChatMessageList assistant messages', () => {
     expect(user.compareDocumentPosition(thinking)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(thinking.parentElement).not.toHaveClass('border-b')
     expect(thinking.parentElement).toHaveClass('text-sm')
-    expect(container.querySelector('.animate-bounce')).toBeNull()
-    expect(thinking).toHaveClass('animate-pulse')
-    expect(container.querySelectorAll('.size-1.5.animate-pulse')).toHaveLength(0)
+    // The status row is the last thing rendered, so its orb is the only one.
+    expect(container.querySelectorAll('.native-chat-loading-orb')).toHaveLength(1)
+    expect(thinking).not.toHaveClass('animate-pulse')
   })
 
   it('places the thinking status directly after the latest user message', () => {
@@ -220,6 +220,53 @@ describe('NativeChatMessageList assistant messages', () => {
     expect(user.compareDocumentPosition(status)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(status.compareDocumentPosition(assistant)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(status.parentElement).toHaveClass('border-b')
+  })
+
+  it('holds a live orb at the tail once output pushes the status row out of view', () => {
+    const workingSession: NativeChatLiveSession = {
+      ...session,
+      status: 'working',
+      messages: [
+        {
+          id: 'user-orb',
+          role: 'user',
+          blocks: [{ type: 'text', text: 'Run the checks' }],
+          timestamp: 1,
+          source: 'transcript'
+        },
+        {
+          id: 'assistant-orb',
+          role: 'assistant',
+          blocks: [{ type: 'text', text: 'I am checking now.' }],
+          timestamp: 2,
+          source: 'transcript'
+        }
+      ]
+    }
+    const { container, rerender } = render(
+      <NativeChatMessageList
+        session={workingSession}
+        isWorking
+        expandSignal={false}
+        fontScale={1}
+      />
+    )
+
+    const orbs = container.querySelectorAll('.native-chat-loading-orb')
+    expect(orbs).toHaveLength(2)
+    const assistant = screen.getByText('I am checking now.')
+    expect(assistant.compareDocumentPosition(orbs[1]!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+
+    rerender(
+      <NativeChatMessageList
+        session={{ ...workingSession, status: 'ready' }}
+        isWorking={false}
+        expandSignal={false}
+        fontScale={1}
+      />
+    )
+
+    expect(container.querySelectorAll('.native-chat-loading-orb')).toHaveLength(0)
   })
 
   it('shows elapsed working time once tool activity starts', () => {

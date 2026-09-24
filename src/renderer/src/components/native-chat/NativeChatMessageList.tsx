@@ -92,6 +92,11 @@ export function NativeChatMessageList({
     ? isWorking
     : shouldShowNativeChatTypingIndicator({ messages, isWorking })
   const latestUserIndex = messages.findLastIndex((message) => message.role === 'user')
+  // The turn-status row sits under the user message that opened the turn, so a
+  // long turn pushes it off screen and the tail stops saying anything. The orb
+  // holds that signal at the bottom — unless the status row is already there.
+  const statusRowIsAtTail =
+    showTurnStatus && (latestUserIndex === -1 || latestUserIndex === messages.length - 1)
   const currentTurnKey =
     latestUserIndex === -1 ? undefined : (messages[latestUserIndex]?.id ?? undefined)
   // Resolve each row's turn boundary once. Prefix slice/findLast in the render
@@ -280,7 +285,7 @@ export function NativeChatMessageList({
               workedSeconds={turnStatuses.active.workedSeconds}
             />
           ) : null}
-          {!showTurnStatus && showTypingIndicator ? <NativeChatTypingIndicatorRow /> : null}
+          {showTypingIndicator && !statusRowIsAtTail ? <NativeChatTypingIndicatorRow /> : null}
         </div>
       </div>
       {showJump ? (

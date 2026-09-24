@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { translate } from '@/i18n/i18n'
 import { useNow } from '@/hooks/use-now'
+import { NativeChatLoadingOrb } from './NativeChatLoadingOrb'
 import {
   describeNativeChatTurnStatus,
   formatNativeChatDuration,
@@ -55,7 +56,9 @@ export function NativeChatWorkingStatus({
             NATIVE_CHAT_TURN_STATUS_COPY.workingFor,
             { value0: duration }
           )
-  const className = `flex min-h-8 items-center gap-1 text-sm text-muted-foreground${thinking ? '' : ' border-b border-border'}`
+  // A turn with no settled duration is still in flight; the orb carries that.
+  const live = workedSeconds == null
+  const className = `flex min-h-8 items-center ${live ? 'gap-2' : 'gap-1'} text-sm text-muted-foreground${thinking ? '' : ' border-b border-border'}`
   const caret =
     workedSeconds != null ? (
       <ChevronRight
@@ -90,7 +93,8 @@ export function NativeChatWorkingStatus({
       )}
       aria-live="polite"
     >
-      <span className={thinking ? 'animate-pulse' : undefined}>{label}</span>
+      {live ? <NativeChatLoadingOrb /> : null}
+      <span>{label}</span>
       {caret}
     </div>
   )

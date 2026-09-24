@@ -1534,6 +1534,74 @@ html.native-shell .app-layout {
   }
 }
 
+/* Why: the native-chat transcript's "the agent is doing things" marker. Both the
+   sphere and its halo animate transform/opacity only, so a turn that streams for
+   minutes never leaves the compositor. The halo lags the breath so the two read
+   as one pulse travelling outward, not two loops. */
+@keyframes native-chat-orb-breathe {
+  0%,
+  100% {
+    transform: scale(0.8);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes native-chat-orb-halo {
+  0% {
+    transform: scale(0.75);
+    opacity: 0.4;
+  }
+  70%,
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+.native-chat-loading-orb {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  border-radius: 9999px;
+  /* Offset highlight gives the flat dot depth; monochrome keeps it inside the
+     transcript's palette instead of borrowing a status color. */
+  background: radial-gradient(
+    circle at 32% 28%,
+    var(--foreground) 0%,
+    var(--muted-foreground) 55%,
+    color-mix(in srgb, var(--muted-foreground) 40%, transparent) 100%
+  );
+  animation: native-chat-orb-breathe 1.8s ease-in-out infinite;
+}
+
+.native-chat-loading-orb::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid color-mix(in srgb, var(--muted-foreground) 70%, transparent);
+  animation: native-chat-orb-halo 1.8s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* A frozen mid-breath orb reads as a broken glyph, so settle it at full size
+     and drop the halo entirely. */
+  .native-chat-loading-orb {
+    animation: none;
+    transform: none;
+    opacity: 1;
+  }
+
+  .native-chat-loading-orb::after {
+    animation: none;
+    opacity: 0;
+  }
+}
+
 /* Why: keyframes run when the content mounts already in its final state. */
 @keyframes compact-agent-expansion-reveal {
   from {
