@@ -69,6 +69,16 @@ export function switchProviderFingerprintFields(
   }
 }
 
+/** The host's `switchProvider` method, bound to a lazily read attach context. */
+export function structuredAgentSessionProviderSwitchDelegate(
+  context: () => StructuredAgentSessionAttachContext
+) {
+  return (
+    caller: { callerKey: string },
+    params: Parameters<typeof switchStructuredAgentSessionProvider>[2]
+  ) => switchStructuredAgentSessionProvider(context(), caller.callerKey, params)
+}
+
 export async function switchStructuredAgentSessionProvider(
   context: StructuredAgentSessionAttachContext,
   callerKey: string,

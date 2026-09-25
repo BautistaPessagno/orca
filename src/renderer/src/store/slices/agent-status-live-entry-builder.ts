@@ -1,4 +1,5 @@
 import type { AppState } from '../types'
+import { resolveAgentStatusLiveEntryMainAgent } from './agent-status-live-entry-main-agent'
 import {
   AGENT_STATE_HISTORY_MAX,
   agentSubagentsEqual,
@@ -74,7 +75,7 @@ export function buildAgentStatusLiveEntry(
 ): AgentStatusLiveEntryBuild | AgentStatusLiveEntryRejection {
   const { state, paneKey, payload, terminalTitle, timing, routing, metadata, updatedAt } = args
   const existing = state.agentStatusByPaneKey[paneKey]
-  if (existing && updatedAt < existing.updatedAt) {
+  if (existing && updatedAt < existing.updatedAt && !timing?.allowOlderTimestamp) {
     return { entry: null, reason: 'stale' }
   }
   const effectiveTitle = terminalTitle ?? existing?.terminalTitle
@@ -217,6 +218,7 @@ export function buildAgentStatusLiveEntry(
       : undefined) ??
     matchedRegistryLaunchConfig ??
     matchedSleepingLaunchConfig
+  const mainAgent = resolveAgentStatusLiveEntryMainAgent(existing, payload, identity.agentType)
   const entry: AgentStatusEntry = {
     state: payload.state,
     workingMode: payload.workingMode,
@@ -227,10 +229,12 @@ export function buildAgentStatusLiveEntry(
     ...(timing?.evidenceObservedAt !== undefined
       ? { evidenceObservedAt: timing.evidenceObservedAt }
       : {}),
+    ...(metadata?.structuredHostOwned === true ? { structuredHostOwned: true as const } : {}),
     stateStartedAt,
     agentType: identity.agentType,
     model:
       payload.model ?? (existing?.agentType === identity.agentType ? existing.model : undefined),
+    ...(payload.modelSwitchCommand ? { modelSwitchCommand: payload.modelSwitchCommand } : {}),
     paneKey,
     terminalHandle: statusTerminalHandle,
     worktreeId:
@@ -255,9 +259,11 @@ export function buildAgentStatusLiveEntry(
     lastAssistantMessageIsToolOutput: payload.lastAssistantMessageIsToolOutput,
     ...(lastCompletedAssistantMessage ? { lastCompletedAssistantMessage } : {}),
     orchestration,
+    ...(payload.subagentObservation ? { subagentObservation: payload.subagentObservation } : {}),
     subagents: agentSubagentsEqual(existing?.subagents, payload.subagents)
       ? existing?.subagents
       : payload.subagents,
+    ...(mainAgent ? { mainAgent } : {}),
     ...(providerSession ? { providerSession } : {}),
     ...(metadata?.terminalResumeEligible === false
       ? { terminalResumeEligible: false as const }

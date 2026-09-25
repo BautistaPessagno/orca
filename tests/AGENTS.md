@@ -18,6 +18,22 @@ Rules when adding tests or scripts:
 - Do not reveal windows in explicit background or headless runs. Only an explicitly headful run
   may call `showInactive()`; never call `show()` or `bringToFront()` in automated background checks.
 - Tag a spec `@headful` only when it needs real pixels; it still runs in the background.
-- `ORCA_E2E_FOREGROUND=1` is the only opt-out, for runs whose subject _is_ native focus (IME and
-  other OS-level key injection). Clear `ORCA_BACKGROUND_LAUNCH` for that isolated run and add a
-  comment saying why; an explicit background request takes precedence.
+- Native-focus tests belong on an isolated display or CI. Do not set `ORCA_E2E_FOREGROUND=1`
+  on the user’s desktop; it cannot override explicit background mode.
+
+## Isolated terminal performance presentation
+
+The Terminal Perf workflow has one explicit exception to the no-reveal rule: after windowless
+startup, `terminal-perf-presentation.ts` presents the benchmark window without focus on its
+isolated Xvfb display. Chromium otherwise throttles undrawn frames to one per second and makes
+typing measurements invalid. This exception requires all of:
+
+- `ORCA_E2E_TERMINAL_PERF_XVFB=1`, set inside `xvfb-run` by that workflow;
+- Linux, `GITHUB_ACTIONS=true`, `RUNNER_ENVIRONMENT=github-hosted`, and a nonempty `DISPLAY`;
+- the page fixture to finish loading before presentation, and confirmed native window visibility.
+
+Keep `ORCA_BACKGROUND_LAUNCH=1`: the application must still suppress automatic reveals and focus.
+`isWindowlessLaunch` describes that automatic launch policy, not the window's current visibility.
+This exception belongs only to this benchmark fixture; do not generalize it to local or self-hosted
+runs, paired-client helpers, native-focus tests, or production window policy. Background terminal
+panes remain hidden. Evidence: `docs/reference/terminal-perf-latency-investigation.md`.

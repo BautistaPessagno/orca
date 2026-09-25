@@ -18,7 +18,7 @@ const liveSession: NativeChatLiveSession = {
   agent: 'grok',
   hasMore: false,
   loadingEarlier: false,
-  loadEarlier: () => {}
+  loadEarlier: async () => 'exhausted' as const
 }
 const base = {
   liveSession,

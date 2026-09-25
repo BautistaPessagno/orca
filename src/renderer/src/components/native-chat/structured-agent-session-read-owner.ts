@@ -5,6 +5,7 @@ import {
   AGENT_SESSION_HISTORY_MAX_LIMIT,
   type AgentSessionHistoryResult
 } from '../../../../shared/agent-session-wire'
+import { isUnattachedAgentSessionReadRefusal } from '../../../../shared/structured-agent-session-read-refusal'
 import {
   EMPTY_STRUCTURED_AGENT_SESSION,
   oldestStructuredAgentSessionCursor,
@@ -14,7 +15,7 @@ import {
 } from '../../../../shared/structured-agent-session-reducer'
 import type { RuntimeClientTarget } from '@/runtime/runtime-rpc-client'
 import { callStructuredAgentSession } from '@/runtime/structured-agent-session-client'
-import { NATIVE_CHAT_INITIAL_LIMIT } from './native-chat-pagination'
+import { NATIVE_CHAT_INITIAL_LIMIT, type NativeChatOlderPageResult } from './native-chat-pagination'
 import { startStructuredAgentSessionReadTransport } from './structured-agent-session-read-transport'
 
 export type StructuredAgentSessionReadSnapshot = {
@@ -27,12 +28,14 @@ export type StructuredAgentSessionReadOwner = {
   activate: () => () => void
   dispose: () => void
   getSnapshot: () => StructuredAgentSessionReadSnapshot
-  loadOlder: () => Promise<void>
-  refresh: () => void
+  loadOlder: () => Promise<NativeChatOlderPageResult>
   subscribe: (listener: () => void) => () => void
 }
 
 const owners = new Map<string, StructuredAgentSessionReadOwner>()
+
+/** Bounded so a busy stream cannot turn one scroll-to-top into an endless read chain. */
+const OLDER_PAGE_ANCHOR_ATTEMPTS = 3
 
 function countsTowardInitialHistory(item: AgentJournalRenderItem): boolean {
   return item.body.kind !== 'status' || !item.body.providerFrame
@@ -53,7 +56,6 @@ function createReadOwner(
     loadingOlder: false
   }
   let stopActiveRun: (() => void) | null = null
-  let refreshActiveRun = (): void => {}
   const retiredHistoryRead = (): boolean => true
   let captureActiveHistoryReadGuard = (): (() => boolean) => retiredHistoryRead
   const activations = new Set<symbol>()
@@ -72,7 +74,7 @@ function createReadOwner(
     emit()
   }
   const apply = (action: StructuredAgentSessionAction): void => {
-    const state = reduceStructuredAgentSession(snapshot.state, action)
+    const state = reduceStructuredAgentSession(snapshot.state, action, Date.now())
     if (state !== snapshot.state) {
       setSnapshot({ ...snapshot, state })
     }
@@ -87,7 +89,7 @@ function createReadOwner(
       setSnapshot({ ...snapshot, loadingOlder: false })
     }
   }
-  const refreshTail = async (shouldStop: () => boolean): Promise<void> => {
+  const hydrate = async (shouldStop: () => boolean): Promise<void> => {
     const result = await callStructuredAgentSession<AgentSessionHistoryResult>(
       target,
       'agentSession.history',
@@ -116,11 +118,12 @@ function createReadOwner(
     if (shouldStop()) {
       return
     }
-    apply({ type: 'tail-page', page: result.page })
+    apply({ type: 'history-page', page: result.page })
     if (shouldStop()) {
       return
     }
     let restored = snapshot.state.items.filter(countsTowardInitialHistory).length
+    let anchorSlides = 0
     while (snapshot.state.hasOlder && restored < NATIVE_CHAT_INITIAL_LIMIT) {
       const oldest = oldestStructuredAgentSessionCursor(snapshot.state)
       if (!oldest || shouldStop()) {
@@ -146,11 +149,69 @@ function createReadOwner(
       if (shouldStop()) {
         return
       }
-      apply({ type: 'older-page', requestedEpoch: oldest.epoch, page: older.page })
+      // A live batch that head-trimmed past the anchor makes this page discontiguous;
+      // the reducer drops it, so re-anchor rather than chase a moving window forever.
+      if (oldestStructuredAgentSessionCursor(snapshot.state)?.sequence !== oldest.sequence) {
+        anchorSlides += 1
+        if (anchorSlides >= OLDER_PAGE_ANCHOR_ATTEMPTS) {
+          break
+        }
+        continue
+      }
+      apply({ type: 'older-page', requestedCursor: oldest, page: older.page })
       if (shouldStop()) {
         return
       }
       restored = snapshot.state.items.filter(countsTowardInitialHistory).length
+    }
+  }
+
+  let olderPage: { shouldStop: () => boolean; promise: Promise<NativeChatOlderPageResult> } | null =
+    null
+  const readOlderPage = async (shouldStop: () => boolean): Promise<NativeChatOlderPageResult> => {
+    try {
+      // A live batch can head-trim past the anchor mid-read, and the reducer drops
+      // that page rather than leave a hole in the transcript. Re-anchor and retry.
+      for (let attempt = 0; attempt < OLDER_PAGE_ANCHOR_ATTEMPTS; attempt += 1) {
+        const cursor = oldestStructuredAgentSessionCursor(snapshot.state)
+        if (shouldStop()) {
+          return 'superseded'
+        }
+        if (!cursor) {
+          return 'exhausted'
+        }
+        const result = await callStructuredAgentSession<AgentSessionHistoryResult>(
+          target,
+          'agentSession.history',
+          { sessionId, direction: 'before', cursor, limit: AGENT_SESSION_HISTORY_MAX_LIMIT }
+        )
+        if (shouldStop()) {
+          return 'superseded'
+        }
+        if (!result.ok) {
+          return 'failed'
+        }
+        // The reducer drops a page whose anchor slid, so only an intact anchor lands.
+        if (oldestStructuredAgentSessionCursor(snapshot.state)?.sequence === cursor.sequence) {
+          apply({ type: 'older-page', requestedCursor: cursor, page: result.page })
+          if (oldestStructuredAgentSessionCursor(snapshot.state)?.sequence !== cursor.sequence) {
+            return 'applied'
+          }
+          return snapshot.state.hasOlder ? 'unchanged' : 'exhausted'
+        }
+      }
+      return 'unchanged'
+    } catch (error) {
+      if (shouldStop()) {
+        return 'superseded'
+      }
+      // An unattached session is the live transport's subject, not this page's: it re-asks and
+      // decides. A page that refused that way must not put the pane in an error state the
+      // transport is about to clear.
+      if (!isUnattachedAgentSessionReadRefusal(error)) {
+        apply({ type: 'error', message: String(error) })
+      }
+      return 'failed'
     }
   }
 
@@ -163,15 +224,13 @@ function createReadOwner(
       applyError: (message) => apply({ type: 'error', message }),
       getCursor: () => snapshot.state.cursor,
       onHistoryReadInvalidated: clearLoadingOlder,
-      refreshTail,
+      hydrate: snapshot.state.epoch === null ? hydrate : undefined,
       sessionId,
       target
     })
     captureActiveHistoryReadGuard = transport.captureHistoryReadGuard
-    refreshActiveRun = transport.refresh
     stopActiveRun = () => {
       captureActiveHistoryReadGuard = () => retiredHistoryRead
-      refreshActiveRun = (): void => {}
       transport.dispose()
       stopActiveRun = null
     }
@@ -204,42 +263,33 @@ function createReadOwner(
       stopActiveRun?.()
     },
     getSnapshot: () => snapshot,
-    loadOlder: async () => {
+    loadOlder: () => {
+      // Concurrent callers (scroll-to-top, the button, a rail jump) share one page
+      // and its result rather than reading a refusal as "no progress".
+      if (olderPage && !olderPage.shouldStop()) {
+        return olderPage.promise
+      }
       const shouldStop = captureActiveHistoryReadGuard()
       if (shouldStop()) {
-        return
+        return Promise.resolve('superseded')
       }
-      const cursor = oldestStructuredAgentSessionCursor(snapshot.state)
-      if (!cursor || !snapshot.state.hasOlder || snapshot.loadingOlder) {
-        return
-      }
-      if (shouldStop()) {
-        return
+      if (!oldestStructuredAgentSessionCursor(snapshot.state) || !snapshot.state.hasOlder) {
+        return Promise.resolve('exhausted')
       }
       setSnapshot({ ...snapshot, loadingOlder: true })
-      try {
-        const result = await callStructuredAgentSession<AgentSessionHistoryResult>(
-          target,
-          'agentSession.history',
-          { sessionId, direction: 'before', cursor, limit: AGENT_SESSION_HISTORY_MAX_LIMIT }
-        )
-        if (shouldStop()) {
+      const page = { shouldStop, promise: readOlderPage(shouldStop) }
+      olderPage = page
+      void page.promise.finally(() => {
+        if (olderPage !== page) {
           return
         }
-        if (result.ok && !shouldStop()) {
-          apply({ type: 'older-page', requestedEpoch: cursor.epoch, page: result.page })
-        }
-      } catch (error) {
-        if (!shouldStop()) {
-          apply({ type: 'error', message: String(error) })
-        }
-      } finally {
+        olderPage = null
         if (!shouldStop()) {
           clearLoadingOlder()
         }
-      }
+      })
+      return page.promise
     },
-    refresh: () => refreshActiveRun(),
     subscribe: (listener) => {
       listeners.add(listener)
       return () => {

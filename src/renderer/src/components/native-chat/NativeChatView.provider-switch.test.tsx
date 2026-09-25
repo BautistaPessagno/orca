@@ -41,6 +41,7 @@ describe('native chat provider switch resolution', () => {
         resolvedAgent="claude"
         ownsTabWideLaunchDraft={false}
         isVisible
+        isFocusedGroup
       />
     )
     expect(screen.getByText('grok:no-session')).toBeInTheDocument()
@@ -73,6 +74,7 @@ describe('native chat provider switch resolution', () => {
         resolvedAgent="claude"
         ownsTabWideLaunchDraft={false}
         isVisible
+        isFocusedGroup
       />
     )
     expect(screen.getByText('claude:actual-claude-session')).toBeInTheDocument()

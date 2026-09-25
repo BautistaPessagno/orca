@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { parseAgentJournalItemKey } from '../../shared/agent-session-journal-item-key'
 import { acpSpawnRecipe, isAcpStructuredAgent } from '../../shared/acp-agent-recipes'
 import type {
   AgentSessionAcquisition,
@@ -21,7 +20,6 @@ import {
 } from './acp-session-config'
 import {
   acpPromptBlocks,
-  acpPromptReply,
   applyAcpServerRequest,
   applyAcpSessionUpdate,
   type AcpPendingPrompt
@@ -31,6 +29,7 @@ import {
   acpResumeSessionId,
   authenticateAcpConnection
 } from './acp-session-identity'
+import { answerAcpStructuredPrompt } from './acp-structured-prompt-answer'
 
 export type AcpStructuredSessionAdapterDeps = {
   openConnection?: typeof openAcpJsonRpcConnection
@@ -254,17 +253,8 @@ export class AcpStructuredSessionAdapter implements StructuredAgentSessionAdapte
     return { cancelled: true }
   }
 
-  answerPrompt: StructuredAgentSessionAdapter['answerPrompt'] = async (input) => {
-    const session = this.sessions.get(input.sessionId)
-    const identity = parseAgentJournalItemKey(input.itemId)
-    const pendingKey = identity?.provider === 'legacy' ? identity.recordId : input.itemId
-    const pending = session?.pendingPermissions.get(pendingKey)
-    if (!session || !pending) {
-      return
-    }
-    session.pendingPermissions.delete(pendingKey)
-    session.connection.respond(pending.id, acpPromptReply(pending, pendingKey, input.optionId))
-  }
+  answerPrompt: StructuredAgentSessionAdapter['answerPrompt'] = (input) =>
+    answerAcpStructuredPrompt(this.sessions, input)
 
   setOption: StructuredAgentSessionAdapter['setOption'] = async (input) => {
     const session = this.sessions.get(input.sessionId)

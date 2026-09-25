@@ -66,14 +66,18 @@ export function useNativeChatProviderModels(args: {
     }
   }, [worktreeId, canSwitch])
   return useMemo(() => {
-    if (!STRUCTURED_SWITCHABLE_AGENTS.some((agent) => agent === currentAgent) || !originalSurface) {
+    // A pane that cannot switch keeps its own provider's plain model list.
+    if (
+      !onSwitchProvider ||
+      !STRUCTURED_SWITCHABLE_AGENTS.some((agent) => agent === currentAgent) ||
+      !originalSurface
+    ) {
       return { surface: originalSurface, snapshot: originalSnapshot }
     }
     const supportedByAgent = Object.fromEntries(
       STRUCTURED_SWITCHABLE_AGENTS.map((agent) => [
         agent,
         Boolean(
-          onSwitchProvider &&
           isNativeChatSupportedAgent(agent) &&
           (!nativeChatRequiresLocalTranscript(agent) ||
             isNativeChatTranscriptLocalReadable(

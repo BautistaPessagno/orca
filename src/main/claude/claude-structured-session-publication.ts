@@ -5,18 +5,22 @@ import type { ClaudePromptRegistry } from './claude-structured-prompt-replies'
 import type { ClaudeJournalTranslator } from './claude-structured-journal-translation'
 import type { ClaudeSession } from './claude-structured-session-state'
 import { ClaudeBackgroundTaskTracker } from './claude-background-task-tracker'
+import { ClaudeSlashCommandCatalog } from './claude-slash-command-catalog'
 
 export function createClaudeSessionPublication(input: {
   connection: ClaudeSession['connection']
   init: ClaudeInitObservation
-  claudeConfigDir: string
+  initialization?: unknown
   leafUuid: string | null
+  /** The launch's stored leaf: a frame seen before publication is not a completed turn. */
+  turnEndLeafUuid: string | null
   fence: number
   acquisitionGeneration: string
   resumed: boolean
   prompts: ClaudePromptRegistry
   translator: ClaudeJournalTranslator | null
   events: ClaudeSession['events']
+  unbindReadingControl?: () => void
   process: AgentSessionAcquisition['process']
   linkId?: string
   observedAt: number
@@ -24,9 +28,14 @@ export function createClaudeSessionPublication(input: {
   capabilities: readonly string[]
   /** Read from `get_settings`; `system/init` never reports an effort. */
   effort: string | null
+  fastMode: boolean | null
+  fastModePerSessionOptIn: boolean | null
+  fastModeState?: ClaudeSession['fastModeState']
+  fastModeDisabledReason?: string
 }): { acquisition: AgentSessionAcquisition; session: ClaudeSession } {
   const model = input.init.model
   const effort = input.effort
+  const fastMode = input.fastMode
   return {
     acquisition: {
       process: input.process,
@@ -43,8 +52,8 @@ export function createClaudeSessionPublication(input: {
     session: {
       connection: input.connection,
       providerSessionId: input.init.providerSessionId,
-      claudeConfigDir: input.claudeConfigDir,
       leafUuid: input.leafUuid,
+      turnEndLeafUuid: input.turnEndLeafUuid,
       fence: input.fence,
       acquisitionGeneration: input.acquisitionGeneration,
       prompts: input.prompts,
@@ -52,19 +61,32 @@ export function createClaudeSessionPublication(input: {
       retiredDispatchWaiters: [],
       replayContentFallbackBlocked: false,
       backgroundTasks: new ClaudeBackgroundTaskTracker(),
+      commands: new ClaudeSlashCommandCatalog(input.init.message, input.initialization),
       dispatchSequence: 0,
       optionMutationSequence: 0,
       options: new Map(input.options),
       capabilities: input.capabilities,
       reportedOptions: {
         ...(model ? { model } : {}),
-        ...(effort ? { effort } : {})
+        ...(effort ? { effort } : {}),
+        ...(fastMode !== null ? { fastMode } : {})
       },
+      ...(input.fastModeState ? { fastModeState: input.fastModeState } : {}),
+      ...(input.fastModeDisabledReason
+        ? { fastModeDisabledReason: input.fastModeDisabledReason }
+        : {}),
+      ...(input.fastModePerSessionOptIn !== null
+        ? { fastModePerSessionOptIn: input.fastModePerSessionOptIn }
+        : {}),
       reportedModelMutation: 0,
-      confirmedOptions: new Set(effort ? ['effort'] : []),
+      confirmedOptions: new Set([
+        ...(effort ? ['effort'] : []),
+        ...(fastMode !== null ? ['fastMode'] : [])
+      ]),
       restoreSkippedOptions: new Set(),
       translator: input.translator,
-      events: input.events
+      events: input.events,
+      ...(input.unbindReadingControl ? { unbindReadingControl: input.unbindReadingControl } : {})
     }
   }
 }

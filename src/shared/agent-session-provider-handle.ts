@@ -21,6 +21,15 @@ export function isAgentSessionHandleProvider(value: unknown): value is AgentSess
   return value === 'claude' || value === 'codex' || value === 'grok' || value === 'cursor'
 }
 
+/** Providers whose own transcript Orca can adopt into a structured session (history import). */
+export type AgentSessionHistoryAdoptionProvider = 'claude' | 'codex'
+
+export function isAgentSessionHistoryAdoptionProvider(
+  value: unknown
+): value is AgentSessionHistoryAdoptionProvider {
+  return value === 'claude' || value === 'codex'
+}
+
 export type AgentSessionProviderHandle =
   | { provider: 'claude'; sessionId: string; leafUuid: string | null }
   | { provider: 'codex'; threadId: string }

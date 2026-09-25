@@ -1,14 +1,11 @@
-import { useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { translate } from '@/i18n/i18n'
-import { useNow } from '@/hooks/use-now'
-import { NativeChatLoadingOrb } from './NativeChatLoadingOrb'
 import {
   describeNativeChatTurnStatus,
   formatNativeChatDuration,
-  NATIVE_CHAT_TURN_STATUS_COPY,
-  nativeChatElapsedSeconds
+  NATIVE_CHAT_TURN_STATUS_COPY
 } from '../../../../shared/native-chat-turn-status'
+import { useNativeChatElapsedSeconds } from './use-native-chat-elapsed-seconds'
 
 export { formatNativeChatDuration }
 
@@ -25,15 +22,8 @@ export function NativeChatWorkingStatus({
   expanded?: boolean
   onToggleExpanded?: () => void
 }): React.JSX.Element {
-  // Why: elapsed seconds is ordinary render dataflow, not an external system.
-  // The shared 1s clock is visibility-gated and collapses every in-flight turn
-  // onto one tick, instead of one interval plus one commit per turn.
   const counting = !thinking && workedSeconds == null
-  const now = useNow(1_000, counting)
-  // Why: preserves the old effect's `startedAt ?? Date.now()` epoch for the
-  // single frame before the turn's startedAt lands.
-  const [mountedAt] = useState(() => Date.now())
-  const elapsedSeconds = counting ? nativeChatElapsedSeconds(startedAt, mountedAt, now) : 0
+  const elapsedSeconds = useNativeChatElapsedSeconds(startedAt, counting)
 
   const { key, duration } = describeNativeChatTurnStatus({
     thinking,
@@ -56,11 +46,10 @@ export function NativeChatWorkingStatus({
             NATIVE_CHAT_TURN_STATUS_COPY.workingFor,
             { value0: duration }
           )
-  // A turn with no settled duration is still in flight; the orb carries that.
-  const live = workedSeconds == null
-  const className = `flex min-h-8 items-center ${live ? 'gap-2' : 'gap-1'} text-sm text-muted-foreground${thinking ? '' : ' border-b border-border'}`
+  // `tabular-nums`: the live clock reflows its own label every second otherwise.
+  const className = `flex min-h-8 items-center gap-1 text-sm text-muted-foreground tabular-nums${thinking ? '' : ' border-b border-border'}`
   const caret =
-    workedSeconds != null ? (
+    workedSeconds != null && onToggleExpanded ? (
       <ChevronRight
         className={`size-3.5 transition-transform${expanded ? ' rotate-90' : ''}`}
         aria-hidden="true"
@@ -70,6 +59,7 @@ export function NativeChatWorkingStatus({
     return (
       <button
         type="button"
+        data-native-chat-turn-status="settled"
         className={`${className} w-full text-left hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70`}
         aria-label={translate(
           'components.native-chat.status.toggleDetails',
@@ -87,14 +77,14 @@ export function NativeChatWorkingStatus({
   return (
     <div
       className={className}
+      data-native-chat-turn-status={workedSeconds == null ? 'active' : 'settled'}
       aria-label={translate(
         'components.native-chat.status.responding',
         NATIVE_CHAT_TURN_STATUS_COPY.responding
       )}
       aria-live="polite"
     >
-      {live ? <NativeChatLoadingOrb /> : null}
-      <span>{label}</span>
+      <span className={thinking ? 'animate-pulse' : undefined}>{label}</span>
       {caret}
     </div>
   )

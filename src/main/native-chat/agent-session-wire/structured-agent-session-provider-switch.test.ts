@@ -151,6 +151,8 @@ describe('switchProvider', () => {
     expect(store.getRecord(SESSION)?.lease.ownerProcess).toEqual(original?.lease.ownerProcess)
     expect(store.getRecord(SESSION)?.provider).toBe('grok')
     expect(acquire).toHaveBeenCalledOnce()
+    // Teardown evicts every owned child and now refuses one whose exit is unproven.
+    closeSession.mockResolvedValue(true)
   })
 
   it('does not repeat a completed switch after another provider switch', async () => {

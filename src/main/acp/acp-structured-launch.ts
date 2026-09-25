@@ -7,14 +7,15 @@ import type { AcpJsonRpcLaunch } from './acp-jsonrpc-connection'
 import { AcpStructuredSessionAdapter } from './acp-structured-session-adapter'
 import type { openAcpJsonRpcConnection } from './acp-jsonrpc-connection'
 import type { StructuredAgentSessionLifecycleEvent } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
+import { readProcessStartTimeMs } from '../runtime/agent-session-process-identity-probe'
 
 export function createAcpStructuredSessionAdapter(input: {
   store: AgentSessionRecordStore
   resolveWorkspacePath: (workspaceId: string) => Promise<string>
   resolveEnvironment: () => Promise<NodeJS.ProcessEnv>
-  readProcessStartTime: (pid: number) => Promise<number | null>
+  readProcessStartTime?: (pid: number) => Promise<number | null>
   openConnection?: typeof openAcpJsonRpcConnection
-  onEvent?: (event: StructuredAgentSessionLifecycleEvent) => void
+  onUnexpectedExit: (event: StructuredAgentSessionLifecycleEvent) => void
 }): AcpStructuredSessionAdapter {
   return new AcpStructuredSessionAdapter({
     resolveLaunch: (launchInput) =>
@@ -25,9 +26,13 @@ export function createAcpStructuredSessionAdapter(input: {
         resolveWorkspacePath: input.resolveWorkspacePath,
         resolveEnvironment: input.resolveEnvironment
       }),
-    readProcessStartTime: input.readProcessStartTime,
+    readProcessStartTime: input.readProcessStartTime ?? readProcessStartTimeMs,
     ...(input.openConnection ? { openConnection: input.openConnection } : {}),
-    ...(input.onEvent ? { onEvent: input.onEvent } : {})
+    onEvent: (event) => {
+      if (event.type === 'ended' && event.cause === 'unexpected-exit') {
+        input.onUnexpectedExit(event)
+      }
+    }
   })
 }
 

@@ -1,18 +1,23 @@
-import { memo, useCallback, useMemo, useRef } from 'react'
+import { memo, useCallback, useRef } from 'react'
 import CommentMarkdown, {
   type CommentMarkdownLinkClickHandler
 } from '@/components/sidebar/CommentMarkdown'
 import { cn } from '@/lib/utils'
+import type {
+  NativeChatMessage,
+  NativeChatToolCallBlock
+} from '../../../../shared/native-chat-types'
+import { deriveNativeChatRowContent } from '../../../../shared/native-chat-row-content'
 import { NativeChatUserMessageRow } from './NativeChatUserMessageRow'
-import type { NativeChatMessage } from '../../../../shared/native-chat-types'
-import { splitNativeChatBlocks } from './native-chat-tool-fold'
 import { NativeChatToolRun } from './NativeChatToolRun'
-import { nativeChatProseToMarkdown } from './native-chat-prose'
+import { NativeChatCodeBlock } from './NativeChatCodeBlock'
+import { NativeChatNoticeRow } from './NativeChatNoticeRow'
 import {
   NativeChatAgentControls,
   NativeChatImageAttachments,
   ProviderFrameRow
 } from './NativeChatTranscriptChrome'
+import type { NativeChatDiffReveal } from './native-chat-turn-diffs'
 import type { RuntimeFileOperationArgs } from '@/runtime/runtime-file-client'
 
 /** One message: its prose first, then a collapsible run folding all of the
@@ -22,39 +27,43 @@ import type { RuntimeFileOperationArgs } from '@/runtime/runtime-file-client'
  *  keep their block identity, so only the changed row re-renders. */
 export const MessageRow = memo(function MessageRow({
   message,
+  previousTodoWrite,
+  previousUpdatePlan,
+  revealedDiff,
   expandSignal,
   activeTurnIsWorking,
+  trailingRun,
   onScrollMessageToTop,
   onLinkClick,
   allowFileUriLinks = false,
   deliveryFailed = false,
-  activityExpandOverride,
   structuredActivityUi = true,
+  folded = false,
   runtimeContext
 }: {
   message: NativeChatMessage
+  previousTodoWrite?: NativeChatToolCallBlock
+  previousUpdatePlan?: NativeChatToolCallBlock
+  revealedDiff?: NativeChatDiffReveal
   expandSignal: boolean
   activeTurnIsWorking?: boolean
+  /** This row's tool run is the turn's last, so it is the one still live. */
+  trailingRun?: boolean
   /** Align this message's top to the top of the scroll viewport. */
   onScrollMessageToTop: (el: HTMLElement) => void
   onLinkClick?: CommentMarkdownLinkClickHandler
   allowFileUriLinks?: boolean
   deliveryFailed?: boolean
-  activityExpandOverride?: boolean
   structuredActivityUi?: boolean
+  /** Behind a folded turn: the row keeps only what outlives the turn. */
+  folded?: boolean
   runtimeContext?: RuntimeFileOperationArgs | null
 }): React.JSX.Element | null {
   const rowRef = useRef<HTMLDivElement | null>(null)
-  // One pass per block set: a streaming turn re-renders this row on every frame, and these
-  // derivations used to re-run each time even though `message.blocks` had not changed.
-  const { hasImages, markdown, prose, tools } = useMemo(() => {
-    const split = splitNativeChatBlocks(message.blocks)
-    return {
-      ...split,
-      markdown: nativeChatProseToMarkdown(split.prose),
-      hasImages: split.prose.some((block) => block.type === 'image-ref')
-    }
-  }, [message.blocks])
+  // One pass per block set, shared with the list that decides whether this row
+  // occupies a slot — so "draws nothing" means the same thing to both.
+  const { backgroundTasks, hasImages, markdown, prose, subagentGroups, tools } =
+    deriveNativeChatRowContent(message.blocks)
   const isUser = message.role === 'user'
   const isReasoning = message.role === 'reasoning'
   const isSystem = message.role === 'system'
@@ -69,8 +78,38 @@ export const MessageRow = memo(function MessageRow({
   // Skip rows with nothing renderable so the transcript shows no empty/ghost
   // bubble.
   // After all hooks, so hook order stays unconditional.
-  if (markdown.length === 0 && !hasImages && tools.length === 0) {
+  if (
+    markdown.length === 0 &&
+    !hasImages &&
+    tools.length === 0 &&
+    subagentGroups.length === 0 &&
+    backgroundTasks.length === 0
+  ) {
     return null
+  }
+
+  // Behind a folded turn this row is the work, not the answer. Rows that outlive
+  // their turn never reach here — the fold leaves them out.
+  if (folded) {
+    return null
+  }
+
+  const notice = isSystem
+    ? message.blocks.find(
+        (block) =>
+          block.type === 'text' && (block.presentation !== undefined || block.tone !== undefined)
+      )
+    : undefined
+  if (notice?.type === 'text') {
+    return (
+      <div ref={rowRef}>
+        <NativeChatNoticeRow
+          block={notice}
+          onLinkClick={onLinkClick}
+          allowFileUriLinks={allowFileUriLinks}
+        />
+      </div>
+    )
   }
 
   if (providerFrame) {
@@ -85,6 +124,7 @@ export const MessageRow = memo(function MessageRow({
     return (
       <NativeChatUserMessageRow
         rowRef={rowRef}
+        message={message}
         markdown={markdown}
         prose={prose}
         onLinkClick={onLinkClick}
@@ -96,7 +136,7 @@ export const MessageRow = memo(function MessageRow({
   }
 
   // Plain assistant prose is the copyable unit; reasoning/system asides stay
-  // chrome-free. The controls reveal on hover (and on keyboard focus-within).
+  // chrome-free. Controls reveal on hover/keyboard focus and stay visible on touch.
   const showControls = !isReasoning && !isSystem && markdown.length > 0
 
   return (
@@ -119,25 +159,35 @@ export const MessageRow = memo(function MessageRow({
           content={markdown}
           variant="document"
           className="text-sm"
+          renderCodeBlock={NativeChatCodeBlock}
           onLinkClick={onLinkClick}
           allowFileUriLinks={allowFileUriLinks}
           linkifyFilePaths={onLinkClick !== undefined}
         />
       ) : null}
-      {tools.length > 0 ? (
+      {tools.length > 0 || subagentGroups.length > 0 || backgroundTasks.length > 0 ? (
         <NativeChatToolRun
           blocks={tools}
+          previousTodoWrite={previousTodoWrite}
+          previousUpdatePlan={previousUpdatePlan}
+          revealedDiff={revealedDiff}
+          onRevealDiff={onScrollMessageToTop}
+          onLinkClick={onLinkClick}
+          subagentGroups={subagentGroups}
+          backgroundTasks={backgroundTasks}
           expandSignal={expandSignal}
-          expandOverride={activityExpandOverride}
           activeTurnIsWorking={activeTurnIsWorking}
+          trailing={trailingRun}
           structuredActivityUi={structuredActivityUi}
+          disclosureId={message.id}
         />
       ) : null}
       {showControls ? (
         <NativeChatAgentControls
           markdown={markdown}
+          timestamp={message.timestamp}
           onScrollToTop={scrollToTop}
-          className="pointer-events-none mt-1 -mb-5 w-fit select-none opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
+          className="mt-1 -mb-5 w-fit select-none transition-opacity can-hover:pointer-events-none can-hover:opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-has-[:focus-visible]:pointer-events-auto group-has-[:focus-visible]:opacity-100"
         />
       ) : null}
     </div>

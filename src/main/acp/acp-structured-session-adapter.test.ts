@@ -334,7 +334,8 @@ describe('AcpStructuredSessionAdapter', () => {
       itemId: 'tool-1',
       kind: 'approval',
       optionId: 'allow-once',
-      fence: 1
+      fence: 1,
+      commit: async () => {}
     })
     expect(connection.replies).toEqual([
       { id: 7, result: { outcome: { outcome: 'selected', optionId: 'allow-once' } } }
@@ -357,7 +358,8 @@ describe('AcpStructuredSessionAdapter', () => {
       itemId: 'q1',
       kind: 'question',
       optionId: 'a',
-      fence: 1
+      fence: 1,
+      commit: async () => {}
     })
     expect(connection.replies.at(-1)).toMatchObject({
       id: 8,
@@ -386,7 +388,8 @@ describe('AcpStructuredSessionAdapter', () => {
       itemId: journalQuestionId,
       kind: 'question',
       optionId: 'a',
-      fence: 1
+      fence: 1,
+      commit: async () => {}
     })
     expect(connection.replies.at(-1)).toMatchObject({
       id: 9,
@@ -413,7 +416,8 @@ describe('AcpStructuredSessionAdapter', () => {
       itemId: 'plan-10',
       kind: 'approval',
       optionId: 'accept',
-      fence: 1
+      fence: 1,
+      commit: async () => {}
     })
     expect(connection.replies.at(-1)).toEqual({
       id: 10,
@@ -501,7 +505,8 @@ describe('AcpStructuredSessionAdapter', () => {
       itemId: 'early-perm',
       kind: 'approval',
       optionId: 'allow-once',
-      fence: 1
+      fence: 1,
+      commit: async () => {}
     })
     expect(connection.replies).toEqual([
       { id: 3, result: { outcome: { outcome: 'selected', optionId: 'allow-once' } } }

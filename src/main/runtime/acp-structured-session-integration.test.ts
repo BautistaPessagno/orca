@@ -277,6 +277,7 @@ beforeEach(async () => {
   acp = fakeAcp()
   const runtime = {
     getRuntimeId: () => 'runtime-1',
+    getClientSettings: () => ({ experimentalStructuredNativeChat: true }),
     getStructuredAgentSessionCreateSupport: async () => ({ supported: true }),
     resolveStructuredAgentSessionCreateIntent: async (params: {
       agent: 'grok' | 'cursor' | 'claude'
@@ -397,6 +398,7 @@ describe('a structured ACP session over agentSession.*', () => {
     await stopStructuredAgentSessionRuntime()
     const runtime = {
       getRuntimeId: () => 'runtime-1',
+      getClientSettings: () => ({ experimentalStructuredNativeChat: true }),
       getStructuredAgentSessionCreateSupport: async () => ({ supported: true }),
       resolveStructuredAgentSessionCreateIntent: async (params: { agent: 'cursor' }) =>
         attachResolved(params.agent),

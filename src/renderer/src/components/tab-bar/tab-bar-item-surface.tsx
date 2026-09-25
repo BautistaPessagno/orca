@@ -2,9 +2,9 @@ import React from 'react'
 import { resolveTerminalTabTitle } from '../../../../shared/tab-title-resolution'
 import type { TerminalTab } from '../../../../shared/terminal-tab-types'
 import type { TuiAgent } from '../../../../shared/tui-agent'
-import { isAgentSessionHandleProvider } from '../../../../shared/agent-session-provider-handle'
+import { isAcpStructuredAgent } from '../../../../shared/acp-agent-recipes'
 import type { OpenFile } from '../../store/slices/editor'
-import { canSwitchNativeChatView } from '../native-chat/native-chat-availability'
+import { canToggleNativeChat } from '../native-chat/native-chat-availability'
 import { resolveNativeChatTabAgentEvidence } from './native-chat-tab-agent-evidence'
 import SortableTab from './SortableTab'
 import EditorFileTab from './EditorFileTab'
@@ -109,15 +109,14 @@ export function renderTabBarItems({
       const tabWideFallbackSafe = nativeChatTabWideFallbackUnsafeTabsById[terminalTab.id] !== true
       const canToggleViewMode =
         unifiedTabForItem !== undefined &&
-        canSwitchNativeChatView({
+        canToggleNativeChat({
           experimentalNativeChatEnabled: nativeChatEnabled,
           contentType: 'terminal',
           launchAgent: tabWideFallbackSafe ? terminalTab.launchAgent : null,
           detectedAgent,
           resolvedAgent: tabWideFallbackSafe ? resolvedAgent : null,
           nativeChatTranscriptIsLocalReadable,
-          isChatViewMode: unifiedTabForItem.viewMode === 'chat',
-          structuredSessionId: unifiedTabForItem.structuredSessionId ?? null
+          isChatViewMode: unifiedTabForItem.viewMode === 'chat'
         })
       return (
         <SortableTab
@@ -237,7 +236,7 @@ export function renderTabBarItems({
         color: item.data.color,
         sortOrder: item.data.sortOrder,
         createdAt: item.data.createdAt,
-        ...(isAgentSessionHandleProvider(item.data.agentSessionAgent)
+        ...(isAcpStructuredAgent(item.data.agentSessionAgent)
           ? { launchAgent: item.data.agentSessionAgent as TuiAgent }
           : {})
       }

@@ -1,3 +1,5 @@
+import { isAgentSessionRewindRecord, type AgentSessionRewindRecord } from './agent-session-rewind'
+import { isAgentSessionConversationName } from './agent-session-conversation-name'
 /**
  * Durable agent-session record and its single-writer lease.
  *
@@ -7,6 +9,14 @@
  */
 
 import type { ExecutionHostId } from './execution-host'
+import {
+  isAgentSessionAccountHome,
+  type AgentSessionAccountHome
+} from './agent-session-account-home'
+import {
+  isAgentSessionConversationCommandRecord,
+  type AgentSessionConversationCommandRecord
+} from './agent-session-conversation-command'
 import {
   isAgentSessionHandleProvider,
   isAgentSessionProviderHandleChain,
@@ -31,12 +41,7 @@ export type AgentSessionExecutionLocation = {
   workspaceKind: AgentSessionWorkspaceKind
 }
 
-/** Account root pinned at launch by the account selector, so a resume cannot drift to another login. */
-export type AgentSessionAccountHome = {
-  variable: 'CLAUDE_CONFIG_DIR' | 'CODEX_HOME' | 'GROK_HOME' | 'CURSOR_CONFIG_DIR'
-  /** Host-resolved absolute path in the execution host's own path syntax. */
-  path: string
-}
+export type { AgentSessionAccountHome } from './agent-session-account-home'
 
 /** Provider launch environment captured by the host when the session is created. */
 export type AgentSessionLaunchEnv = Record<string, string>
@@ -126,6 +131,10 @@ export type AgentSessionRecord = {
   accountHome: AgentSessionAccountHome
   /** Provider options acknowledged for the next turn, restored across owner replacement. */
   options?: Record<string, string>
+  rewind?: AgentSessionRewindRecord
+  conversationCommand?: AgentSessionConversationCommandRecord
+  /** The name Orca gave this conversation, so a later acquisition need not name it again. */
+  conversationName?: string
   launchArgs?: AgentSessionLaunchArgs
   lease: AgentSessionLease
   createdAt: number
@@ -140,7 +149,6 @@ export type AgentSessionOptionsReplacement = {
 }
 
 const MAX_ID_LENGTH = 512
-const MAX_PATH_LENGTH = 4096
 const MAX_LAUNCH_ENV_ENTRIES = 256
 const MAX_LAUNCH_ENV_VALUE_LENGTH = 65_536
 const MAX_LAUNCH_ARGS = 256
@@ -211,21 +219,7 @@ export function isAgentSessionProcessIdentity(
   )
 }
 
-function isAgentSessionAccountHome(value: unknown): value is AgentSessionAccountHome {
-  if (typeof value !== 'object' || value === null) {
-    return false
-  }
-  const home = value as Partial<AgentSessionAccountHome>
-  return (
-    (home.variable === 'CLAUDE_CONFIG_DIR' ||
-      home.variable === 'CODEX_HOME' ||
-      home.variable === 'GROK_HOME' ||
-      home.variable === 'CURSOR_CONFIG_DIR') &&
-    isBoundedString(home.path, MAX_PATH_LENGTH)
-  )
-}
-
-function isAgentSessionOptions(value: unknown): value is Record<string, string> {
+export function isAgentSessionOptions(value: unknown): value is Record<string, string> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return false
   }
@@ -331,7 +325,7 @@ export function isAgentSessionRecord(value: unknown): value is AgentSessionRecor
     return false
   }
   const record = value as Partial<AgentSessionRecord>
-  const shapeValid =
+  const fieldsValid =
     record.schemaVersion === AGENT_SESSION_RECORD_SCHEMA_VERSION &&
     isAgentSessionId(record.sessionId) &&
     isAgentSessionExecutionLocation(record.location) &&
@@ -339,13 +333,18 @@ export function isAgentSessionRecord(value: unknown): value is AgentSessionRecor
     isAgentSessionProviderHandleChain(record.providerHandleChain) &&
     isAgentSessionAccountHome(record.accountHome) &&
     (record.options === undefined || isAgentSessionOptions(record.options)) &&
+    (record.rewind === undefined || isAgentSessionRewindRecord(record.rewind)) &&
+    (record.conversationCommand === undefined ||
+      isAgentSessionConversationCommandRecord(record.conversationCommand)) &&
+    (record.conversationName === undefined ||
+      isAgentSessionConversationName(record.conversationName)) &&
     (record.launchArgs === undefined || isAgentSessionLaunchArgs(record.launchArgs)) &&
     !Object.hasOwn(record, 'launchEnv') &&
     isAgentSessionLease(record.lease) &&
     record.lease.sessionId === record.sessionId &&
     Number.isSafeInteger(record.createdAt) &&
     Number.isSafeInteger(record.updatedAt)
-  if (!shapeValid) {
+  if (!fieldsValid) {
     return false
   }
   const validated = record as AgentSessionRecord

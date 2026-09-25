@@ -1,16 +1,20 @@
 import { useState, type Ref } from 'react'
+import { Goal } from 'lucide-react'
 import CommentMarkdown, {
   type CommentMarkdownLinkClickHandler
 } from '@/components/sidebar/CommentMarkdown'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
 import { isAgentSessionContinuationPrompt } from '@/lib/agent-session-continuation'
-import type { NativeChatBlock } from '../../../../shared/native-chat-types'
+import type { NativeChatBlock, NativeChatMessage } from '../../../../shared/native-chat-types'
 import type { RuntimeFileOperationArgs } from '@/runtime/runtime-file-client'
+import { NativeChatCodeBlock } from './NativeChatCodeBlock'
+import { NativeChatMessageTimestamp } from './NativeChatMessageTimestamp'
 import { NativeChatImageAttachments } from './NativeChatTranscriptChrome'
 
 export function NativeChatUserMessageRow({
   rowRef,
+  message,
   markdown,
   prose,
   onLinkClick,
@@ -19,6 +23,7 @@ export function NativeChatUserMessageRow({
   runtimeContext
 }: {
   rowRef: Ref<HTMLDivElement>
+  message: NativeChatMessage
   markdown: string
   prose: NativeChatBlock[]
   onLinkClick?: CommentMarkdownLinkClickHandler
@@ -27,7 +32,7 @@ export function NativeChatUserMessageRow({
   runtimeContext?: RuntimeFileOperationArgs | null
 }): React.JSX.Element {
   return (
-    <div ref={rowRef} className="flex flex-col items-end gap-0.5">
+    <div ref={rowRef} className="group relative flex flex-col items-end gap-0.5">
       {isAgentSessionContinuationPrompt(markdown) ? (
         <ContinuationPromptCard
           markdown={markdown}
@@ -37,6 +42,7 @@ export function NativeChatUserMessageRow({
           runtimeContext={runtimeContext}
         />
       ) : (
+        // User turns get a distinct muted fill so the prompt reads apart from the assistant's copy.
         <div className="max-w-[85%] rounded-lg rounded-tr-sm bg-muted px-3.5 py-2.5 text-sm text-foreground">
           <UserPromptBody
             markdown={markdown}
@@ -47,6 +53,17 @@ export function NativeChatUserMessageRow({
           />
         </div>
       )}
+      {message.sentAs === 'goal' ? (
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <Goal className="size-3" aria-hidden />
+          <span>{translate('components.native-chat.goal.sentAsGoal', 'Sent as goal')}</span>
+        </div>
+      ) : null}
+      <NativeChatMessageTimestamp
+        timestamp={message.timestamp}
+        focusable
+        className="select-none transition-opacity can-hover:pointer-events-none can-hover:opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-has-[:focus-visible]:pointer-events-auto group-has-[:focus-visible]:opacity-100"
+      />
       {deliveryFailed ? (
         <div className="max-w-[85%] text-[11px] text-destructive/80">
           {translate(
@@ -130,6 +147,7 @@ function UserPromptBody({
           content={markdown}
           variant="document"
           className="text-sm"
+          renderCodeBlock={NativeChatCodeBlock}
           onLinkClick={onLinkClick}
           allowFileUriLinks={allowFileUriLinks}
         />

@@ -1,6 +1,7 @@
 import { windowsLongPathGitArgs } from '../../shared/windows-long-path-git-args'
 import { resolveWorktreeAddBaseRef } from '../../shared/worktree/base-ref'
 import type { AddWorktreeOptions, AddWorktreeResult, GitWorktreeExecOptions } from './worktree'
+import { gitExecOptions, type GitExecOptionsForWorktree } from './worktree-operation-options'
 import {
   configurePushAutoSetupRemote,
   notifyPreparedWorktreeMutation,
@@ -15,22 +16,10 @@ import { gitExecFileAsync } from './runner'
 import { runWithGitReadCacheInvalidation } from './status'
 import { invalidateWslLinkedWorktreeGitRouting } from './wsl-linked-worktree-git-routing'
 
-function gitExecOptions(
-  cwd: string,
-  options: GitWorktreeExecOptions
-): { cwd: string; wslDistro?: string; signal?: AbortSignal; timeout?: number } {
-  return {
-    cwd,
-    ...(options.wslDistro ? { wslDistro: options.wslDistro } : {}),
-    ...(options.signal ? { signal: options.signal } : {}),
-    ...(options.timeout ? { timeout: options.timeout } : {})
-  }
-}
-
 function gitCleanupOptions(
   cwd: string,
   options: GitWorktreeExecOptions
-): { cwd: string; wslDistro?: string; timeout?: number } {
+): GitExecOptionsForWorktree {
   // Why: cancellation must not strand a partially moved worktree; cleanup is bounded separately.
   return gitExecOptions(cwd, { ...options, signal: undefined })
 }
@@ -45,16 +34,16 @@ async function performDiscardPreparedWorktree(
     timeout: options.timeout ?? WORKTREE_REMOVAL_REGISTRATION_TIMEOUT_MS
   }
   try {
+    // Preserve the ownership lock if removal cannot start; Git 2.25 supports locked removal.
     await gitExecFileAsync(
-      [...windowsLongPathGitArgs(repoPath), 'worktree', 'unlock', worktreePath],
-      cleanupGitOptions
-    )
-  } catch {
-    // It may be unlocked already or only partially registered.
-  }
-  try {
-    await gitExecFileAsync(
-      [...windowsLongPathGitArgs(repoPath), 'worktree', 'remove', '--force', worktreePath],
+      [
+        ...windowsLongPathGitArgs(repoPath),
+        'worktree',
+        'remove',
+        '--force',
+        '--force',
+        worktreePath
+      ],
       cleanupGitOptions
     )
   } finally {
