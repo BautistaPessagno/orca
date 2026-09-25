@@ -23,6 +23,13 @@ const prior: NativeChatMessage = {
   timestamp: 1,
   source: 'transcript'
 }
+const boundary: NativeChatMessage = {
+  id: 'provider-switch:old',
+  role: 'system',
+  blocks: [{ type: 'text', text: 'Codex', presentation: 'provider-switch' }],
+  timestamp: 1,
+  source: 'scrape'
+}
 const stage = () =>
   stageNativeChatProviderContinuation({
     paneKey: 'pane',
@@ -62,7 +69,11 @@ describe('terminal chat provider continuation', () => {
       'codex',
       [next]
     )
-    expect(visible).toEqual([prior, { ...next, blocks: [{ type: 'text', text: 'Continue here' }] }])
+    expect(visible).toEqual([
+      prior,
+      boundary,
+      { ...next, blocks: [{ type: 'text', text: 'Continue here' }] }
+    ])
   })
   it('embeds the visible conversation even when a source transcript is available', () => {
     stageNativeChatProviderContinuation({
@@ -84,14 +95,14 @@ describe('terminal chat provider continuation', () => {
       blocks: [{ type: 'text', text: first.text.slice(7) }]
     }
     const record = readNativeChatProviderContinuation('pane')
-    expect(withNativeChatProviderHistory(record, 'codex', [next])[1].blocks).toEqual([
+    expect(withNativeChatProviderHistory(record, 'codex', [next])[2].blocks).toEqual([
       { type: 'text', text: 'Continue here' }
     ])
     const unrelated = {
       ...next,
       blocks: [{ type: 'text' as const, text: 'Current user message:\nContinue here' }]
     }
-    expect(withNativeChatProviderHistory(record, 'codex', [unrelated])[1]).toEqual(unrelated)
+    expect(withNativeChatProviderHistory(record, 'codex', [unrelated])[2]).toEqual(unrelated)
   })
   it('preserves and redacts history for the actual provider on the bound replacement terminal', () => {
     stage()
@@ -109,7 +120,7 @@ describe('terminal chat provider continuation', () => {
         [next],
         'new'
       )
-    ).toEqual([prior, { ...next, blocks: [{ type: 'text', text: 'Continue here' }] }])
+    ).toEqual([prior, boundary, { ...next, blocks: [{ type: 'text', text: 'Continue here' }] }])
     expect(
       withNativeChatProviderHistory(
         readNativeChatProviderContinuation('pane'),

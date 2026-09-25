@@ -28,6 +28,26 @@ describe('notice rows', () => {
       screen.getByText('Context compacted').parentElement?.querySelectorAll('.bg-border')
     ).toHaveLength(2)
   })
+  it('renders a provider switch as a separator naming the new provider', () => {
+    render(
+      <MessageRow
+        message={{
+          id: 'provider-switch:old',
+          role: 'system',
+          blocks: [{ type: 'text', text: 'Grok', presentation: 'provider-switch' }],
+          timestamp: 1,
+          source: 'scrape'
+        }}
+        expandSignal={false}
+        onScrollMessageToTop={vi.fn()}
+      />
+    )
+    expect(
+      screen.getByRole('separator', {
+        name: 'Continued with Grok · earlier messages sent as context'
+      })
+    ).toBeInTheDocument()
+  })
   it.each([
     ['warning', 'text-[color:var(--warning,#f59e0b)]'],
     ['error', 'text-destructive'],

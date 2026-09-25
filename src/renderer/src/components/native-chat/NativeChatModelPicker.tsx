@@ -14,7 +14,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { AgentIcon } from '@/lib/agent-catalog'
 import { translate } from '@/i18n/i18n'
 import type { SessionOptionDescriptor } from '../../../../shared/native-chat-session-options'
-import { parseStructuredModelChoice } from '../../../../shared/structured-agent-session-switchable-models'
+import {
+  parseStructuredModelChoice,
+  structuredSwitchableAgentLabel
+} from '../../../../shared/structured-agent-session-switchable-models'
 import { nativeChatModelPillLabel } from './native-chat-session-option-labels'
 
 function ProviderIcon({ value }: { value: string }): React.JSX.Element | null {
@@ -29,11 +32,13 @@ function ProviderIcon({ value }: { value: string }): React.JSX.Element | null {
 export function NativeChatModelPicker({
   descriptor,
   disabled,
+  disabledReason,
   defaultOpen,
   onSelect
 }: {
   descriptor: SessionOptionDescriptor
   disabled: boolean
+  disabledReason?: string | null
   defaultOpen: boolean
   onSelect: (value: string) => void
 }): React.JSX.Element | null {
@@ -46,6 +51,17 @@ export function NativeChatModelPicker({
   const label = nativeChatModelPillLabel(descriptor)
   const modelLabel = translate('components.native-chat.composer.model', 'Model')
   const searchLabel = translate('components.native-chat.composer.searchModels', 'Search models')
+  const currentAgent = currentValue ? parseStructuredModelChoice(currentValue)?.agent : undefined
+  const currentGroup = currentAgent ? structuredSwitchableAgentLabel(currentAgent) : undefined
+  // Picking another provider's model restarts the chat on that provider; say so before the pick.
+  const groupHeading = (group: string | undefined) =>
+    group && currentGroup && group !== currentGroup
+      ? translate(
+          'components.native-chat.composer.otherProviderGroup',
+          '{{agent}} · continues in a new session',
+          { agent: group }
+        )
+      : group
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <Tooltip>
@@ -64,21 +80,19 @@ export function NativeChatModelPicker({
             </Button>
           </PopoverTrigger>
         </TooltipTrigger>
-        <TooltipContent side="top">{modelLabel}</TooltipContent>
+        <TooltipContent side="top">
+          {disabled && disabledReason ? disabledReason : modelLabel}
+        </TooltipContent>
       </Tooltip>
-      <PopoverContent align="start" side="top" collisionPadding={8} className="w-80 p-0">
+      <PopoverContent align="start" side="top" collisionPadding={8} className="w-80">
         <Command>
-          <CommandInput
-            placeholder={searchLabel}
-            aria-label={searchLabel}
-            className="h-8 text-xs"
-          />
+          <CommandInput placeholder={searchLabel} aria-label={searchLabel} className="h-8" />
           <CommandList>
             <CommandEmpty>
               {translate('components.native-chat.composer.noMatchingModels', 'No matching models')}
             </CommandEmpty>
             {groups.map((group) => (
-              <CommandGroup key={group ?? 'models'} heading={group}>
+              <CommandGroup key={group ?? 'models'} heading={groupHeading(group)}>
                 {choices
                   .filter((choice) => choice.group === group)
                   .map((choice) => (
@@ -88,7 +102,6 @@ export function NativeChatModelPicker({
                       keywords={[choice.label, choice.description ?? '', group ?? '']}
                       disabled={disabled || !descriptor.settable || choice.disabled}
                       data-current={choice.value === currentValue}
-                      className="jump-palette-item text-xs"
                       onSelect={() => {
                         setOpen(false)
                         onSelect(choice.value)

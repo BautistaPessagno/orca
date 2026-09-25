@@ -17,8 +17,15 @@ export function NativeChatNoticeRow({
   onLinkClick?: CommentMarkdownLinkClickHandler
   allowFileUriLinks?: boolean
 }): React.JSX.Element {
-  if (block.presentation === 'compaction') {
-    const label = translate('components.native-chat.notices.compaction', 'Context compacted')
+  if (block.presentation === 'compaction' || block.presentation === 'provider-switch') {
+    const label =
+      block.presentation === 'compaction'
+        ? translate('components.native-chat.notices.compaction', 'Context compacted')
+        : translate(
+            'components.native-chat.notices.providerSwitch',
+            'Continued with {{agent}} · earlier messages sent as context',
+            { agent: block.text }
+          )
     return (
       <div
         role="separator"

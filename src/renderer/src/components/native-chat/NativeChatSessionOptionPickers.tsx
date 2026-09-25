@@ -186,7 +186,7 @@ function DescriptorMenuRows(props: {
   const choices = descriptor.kind.choices
   if (choices.length === 0) {
     return (
-      <DropdownMenuLabel className="font-normal text-muted-foreground">
+      <DropdownMenuLabel>
         {translate('components.native-chat.composer.noMatchingModels', 'No matching models')}
       </DropdownMenuLabel>
     )
@@ -279,6 +279,14 @@ function NativeChatSessionOptionPickersInner({
           key={`model:${requestedModelSequence ?? 'idle'}`}
           descriptor={model}
           disabled={isWorking || pendingId !== null}
+          disabledReason={
+            isWorking
+              ? translate(
+                  'components.native-chat.composer.modelBusy',
+                  'Finish or stop the current turn to change the model'
+                )
+              : null
+          }
           defaultOpen={requestedModelSequence !== null}
           onSelect={(value) => setOption(model, value)}
         />

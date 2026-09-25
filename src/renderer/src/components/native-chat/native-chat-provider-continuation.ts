@@ -4,7 +4,10 @@ import {
   buildAgentSessionContinuationPrompt
 } from '../../../../shared/agent-session-continuation'
 import type { NativeChatMessage } from '../../../../shared/native-chat-types'
-import type { StructuredSwitchableAgent } from '../../../../shared/structured-agent-session-switchable-models'
+import {
+  structuredSwitchableAgentLabel,
+  type StructuredSwitchableAgent
+} from '../../../../shared/structured-agent-session-switchable-models'
 import type { NativeChatSendHandle } from './native-chat-runtime-send'
 import { setBoundedScopeCacheEntry } from './native-chat-composer-scope-cache'
 import {
@@ -138,7 +141,35 @@ export function withNativeChatProviderHistory(
       })
     : messages
   const priorIds = new Set(continuation.messages.map((message) => message.id))
-  return [...continuation.messages, ...visible.filter((message) => !priorIds.has(message.id))]
+  const boundary = providerSwitchBoundary(continuation)
+  return [
+    ...continuation.messages,
+    ...(boundary ? [boundary] : []),
+    ...visible.filter((message) => !priorIds.has(message.id))
+  ]
+}
+
+/** Marks where the previous provider's history ends, since both render in one list. */
+function providerSwitchBoundary(
+  continuation: NativeChatProviderContinuation
+): NativeChatMessage | null {
+  const last = continuation.messages.at(-1)
+  if (!last) {
+    return null
+  }
+  return {
+    id: `provider-switch:${continuation.sourcePtyId}`,
+    role: 'system',
+    blocks: [
+      {
+        type: 'text',
+        text: structuredSwitchableAgentLabel(continuation.agent),
+        presentation: 'provider-switch'
+      }
+    ],
+    timestamp: last.timestamp,
+    source: 'scrape'
+  }
 }
 
 function redactContinuationSend(
