@@ -3,6 +3,12 @@ import { createIncrementalNdjsonFramer } from '../../shared/main-process-ndjson-
 import { RetryableProcessExitProof } from '../../shared/child-process/retryable-process-exit-proof'
 import { forceTerminateProcessTree } from '../../shared/child-process/process-tree-termination'
 import { waitForProcessExitUntil } from '../codex/codex-process-exit-deadline'
+import {
+  AcpInitializeResultSchema,
+  AcpRecordSchema,
+  AcpRequestErrorSchema,
+  parseAcpFrame
+} from './acp-wire-schemas'
 
 export type AcpJsonRpcServerRequest = {
   id: number | string
@@ -20,7 +26,7 @@ export type AcpJsonRpcLaunch = {
   command: string
   args: readonly string[]
   cwd?: string
-  env?: Record<string, string>
+  env?: NodeJS.ProcessEnv
 }
 
 export type AcpInitializeResult = {
@@ -95,16 +101,14 @@ export async function openAcpJsonRpcConnection(
 
   const framer = createIncrementalNdjsonFramer(
     (record) => {
-      if (typeof record !== 'object' || record === null) {
+      const frame = AcpRecordSchema.safeParse(record).data
+      if (!frame) {
         return
       }
-      const frame = record as Record<string, unknown>
       if (typeof frame.method === 'string' && frame.id !== undefined && frame.id !== null) {
-        handlers.onServerRequest?.({
-          id: frame.id as number | string,
-          method: frame.method,
-          params: frame.params
-        })
+        if (typeof frame.id === 'number' || typeof frame.id === 'string') {
+          handlers.onServerRequest?.({ id: frame.id, method: frame.method, params: frame.params })
+        }
         return
       }
       if (typeof frame.method === 'string') {
@@ -118,9 +122,9 @@ export async function openAcpJsonRpcConnection(
         }
         pending.delete(frame.id)
         if (frame.error && typeof frame.error === 'object') {
-          const error = frame.error as { message?: string; code?: number }
+          const error = parseAcpFrame(AcpRequestErrorSchema, frame.error)
           waiter.reject(
-            new AcpJsonRpcRequestError(error.message ?? 'ACP request failed', error.code)
+            new AcpJsonRpcRequestError(error?.message ?? 'ACP request failed', error?.code)
           )
           return
         }
@@ -205,18 +209,21 @@ export async function openAcpJsonRpcConnection(
   }
 
   try {
-    const initialize = (await request(
-      'initialize',
-      {
-        protocolVersion: 1,
-        clientCapabilities: {
-          fs: { readTextFile: false, writeTextFile: false },
-          terminal: false
+    const initialize = parseAcpFrame(
+      AcpInitializeResultSchema,
+      await request(
+        'initialize',
+        {
+          protocolVersion: 1,
+          clientCapabilities: {
+            fs: { readTextFile: false, writeTextFile: false },
+            terminal: false
+          },
+          clientInfo: { name: 'orca', title: 'Orca', version: '0.0.0' }
         },
-        clientInfo: { name: 'orca', title: 'Orca', version: '0.0.0' }
-      },
-      { timeoutMs: INITIALIZE_TIMEOUT_MS }
-    )) as AcpInitializeResult
+        { timeoutMs: INITIALIZE_TIMEOUT_MS }
+      )
+    )
     return {
       get pid() {
         return child.pid

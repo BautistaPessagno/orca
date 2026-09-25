@@ -3,9 +3,8 @@ import { CODEX_SPAWN_TOKEN_ENV } from '../codex/codex-structured-owner-identity'
 import { LOCAL_EXECUTION_HOST_ID } from '../../shared/execution-host'
 import type { AgentSessionJournalIdentity } from '../../shared/agent-session-journal-types'
 import type { AgentSessionRecordStore } from '../runtime/agent-session-record-store'
-import type { AcpJsonRpcLaunch } from './acp-jsonrpc-connection'
+import type { AcpJsonRpcLaunch, openAcpJsonRpcConnection } from './acp-jsonrpc-connection'
 import { AcpStructuredSessionAdapter } from './acp-structured-session-adapter'
-import type { openAcpJsonRpcConnection } from './acp-jsonrpc-connection'
 import type { StructuredAgentSessionLifecycleEvent } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
 import { readProcessStartTimeMs } from '../runtime/agent-session-process-identity-probe'
 
@@ -62,7 +61,7 @@ export async function resolveAcpStructuredLaunch(input: {
     args: [...recipe.args],
     cwd: workspacePath,
     env: {
-      ...(environment as Record<string, string>),
+      ...environment,
       ...(homeVariable && homePath ? { [homeVariable]: homePath } : {}),
       [CODEX_SPAWN_TOKEN_ENV]: input.spawnToken
     }

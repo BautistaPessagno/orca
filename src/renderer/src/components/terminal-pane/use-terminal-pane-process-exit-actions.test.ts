@@ -11,13 +11,18 @@ import { useTerminalPaneProcessExitActions } from './use-terminal-pane-process-e
 
 function fixture() {
   const dispose = vi.fn()
-  mocks.connect.mockReturnValue({ dispose })
+  const connected: { deps?: PtyConnectionDeps } = {}
+  mocks.connect.mockImplementation((_pane: unknown, _manager: unknown, deps: PtyConnectionDeps) => {
+    connected.deps = deps
+    return { dispose }
+  })
   const pane = {
     id: 1,
     leafId: 'e70e9e56-1645-43ad-9718-a55b44f923d5',
     container: document.createElement('div')
   }
   const bindings = new Map()
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: a restart reads only these controller fields; the rest stay unset.
   const controller = {
     managerRef: { current: { getPanes: () => [pane], setActivePane: vi.fn() } },
     paneTransportsRef: { current: new Map() },
@@ -33,7 +38,7 @@ function fixture() {
     cwd: '/workspace'
   } as unknown as TerminalPaneCloseController
   const hook = renderHook(() => useTerminalPaneProcessExitActions(controller))
-  return { ...hook, bindings, dispose }
+  return { ...hook, bindings, dispose, connected }
 }
 
 describe('native chat replacement startup lifetime', () => {
@@ -47,10 +52,9 @@ describe('native chat replacement startup lifetime', () => {
   })
 
   it('settles on the startup binding and tolerates later disposal', async () => {
-    const { result, bindings } = fixture()
+    const { result, bindings, connected } = fixture()
     const pending = result.current.handleRestartChatPane(1, { command: 'grok' }, '/workspace')
-    const deps = mocks.connect.mock.lastCall?.[2] as PtyConnectionDeps
-    deps.onStartupBound?.()
+    connected.deps?.onStartupBound?.()
     bindings.get(1).dispose()
     await expect(pending).resolves.toBeUndefined()
   })

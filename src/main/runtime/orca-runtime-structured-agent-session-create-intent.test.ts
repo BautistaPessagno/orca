@@ -173,35 +173,10 @@ describe('structured agent-session create intent', () => {
     })
   })
   it('pins Grok home from GROK_HOME and Cursor from CURSOR_CONFIG_DIR', async () => {
-    const runtime = new OrcaRuntimeService({
-      getSettings: () => ({
-        agentDefaultEnv: {
-          grok: { GROK_HOME: '/accounts/grok' },
-          cursor: { CURSOR_CONFIG_DIR: '/accounts/cursor' }
-        }
-      })
-    } as never)
-    vi.spyOn(runtime, 'getStructuredAgentSessionCreateSupport').mockResolvedValue({
-      supported: true
+    const runtime = acpIntentRuntime({
+      grok: { GROK_HOME: '/accounts/grok' },
+      cursor: { CURSOR_CONFIG_DIR: '/accounts/cursor' }
     })
-    const internal = runtime as unknown as {
-      resolveStructuredAgentSessionLocation: () => Promise<{
-        executionHostId: string
-        wslDistro: null
-        workspaceId: string
-        workspaceKind: 'git-worktree'
-      }>
-      resolveRuntimeFileTarget: () => Promise<{ worktree: { path: string } }>
-    }
-    internal.resolveStructuredAgentSessionLocation = vi.fn(async () => ({
-      executionHostId: 'local',
-      wslDistro: null,
-      workspaceId: 'workspace-1',
-      workspaceKind: 'git-worktree' as const
-    }))
-    internal.resolveRuntimeFileTarget = vi.fn(async () => ({
-      worktree: { path: '/repos/workspace-1' }
-    }))
 
     const grok = await runtime.resolveStructuredAgentSessionCreateIntent({
       envelope: { sessionId: 'session-g', clientOperationId: 'operation-g' },
@@ -224,32 +199,7 @@ describe('structured agent-session create intent', () => {
   })
 
   it('does not store the worktree path as a Grok or Cursor account home', async () => {
-    const runtime = new OrcaRuntimeService({
-      getSettings: () => ({
-        agentDefaultEnv: { grok: {}, cursor: {} }
-      })
-    } as never)
-    vi.spyOn(runtime, 'getStructuredAgentSessionCreateSupport').mockResolvedValue({
-      supported: true
-    })
-    const internal = runtime as unknown as {
-      resolveStructuredAgentSessionLocation: () => Promise<{
-        executionHostId: string
-        wslDistro: null
-        workspaceId: string
-        workspaceKind: 'git-worktree'
-      }>
-      resolveRuntimeFileTarget: () => Promise<{ worktree: { path: string } }>
-    }
-    internal.resolveStructuredAgentSessionLocation = vi.fn(async () => ({
-      executionHostId: 'local',
-      wslDistro: null,
-      workspaceId: 'workspace-1',
-      workspaceKind: 'git-worktree' as const
-    }))
-    internal.resolveRuntimeFileTarget = vi.fn(async () => ({
-      worktree: { path: '/repos/workspace-1' }
-    }))
+    const runtime = acpIntentRuntime({ grok: {}, cursor: {} })
 
     const grok = await runtime.resolveStructuredAgentSessionCreateIntent({
       envelope: { sessionId: 'session-g', clientOperationId: 'operation-g' },
@@ -265,3 +215,34 @@ describe('structured agent-session create intent', () => {
     expect(cursor.accountHome.path).not.toBe('/repos/workspace-1')
   })
 })
+
+/** A local git-worktree runtime whose settings carry only `agentDefaultEnv`. */
+function acpIntentRuntime(
+  agentDefaultEnv: Record<string, Record<string, string>>
+): OrcaRuntimeService {
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: create-intent resolution reads only getSettings from the store.
+  const runtime = new OrcaRuntimeService({ getSettings: () => ({ agentDefaultEnv }) } as never)
+  vi.spyOn(runtime, 'getStructuredAgentSessionCreateSupport').mockResolvedValue({
+    supported: true
+  })
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: stubs the two private workspace lookups create-intent resolution awaits.
+  const internal = runtime as unknown as {
+    resolveStructuredAgentSessionLocation: () => Promise<{
+      executionHostId: string
+      wslDistro: null
+      workspaceId: string
+      workspaceKind: 'git-worktree'
+    }>
+    resolveRuntimeFileTarget: () => Promise<{ worktree: { path: string } }>
+  }
+  internal.resolveStructuredAgentSessionLocation = vi.fn(async () => ({
+    executionHostId: 'local',
+    wslDistro: null,
+    workspaceId: 'workspace-1',
+    workspaceKind: 'git-worktree' as const
+  }))
+  internal.resolveRuntimeFileTarget = vi.fn(async () => ({
+    worktree: { path: '/repos/workspace-1' }
+  }))
+  return runtime
+}

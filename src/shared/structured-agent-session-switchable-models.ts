@@ -46,8 +46,11 @@ export function structuredSwitchableAgentLabel(agent: string): string {
   return 'Codex'
 }
 
-export function catalogAgentForStructuredSession(agent: AgentType): StructuredSwitchableAgent {
-  return agent === 'openclaude' ? 'claude' : (agent as StructuredSwitchableAgent)
+/** The catalog lane a session's models are listed under; a non-switchable agent keeps its own. */
+export function catalogAgentForStructuredSession(
+  agent: AgentType
+): StructuredSwitchableAgent | AgentType {
+  return acpHandleProvider(agent) ?? agent
 }
 
 export function withSwitchableStructuredModels(

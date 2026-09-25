@@ -1,33 +1,36 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TerminalPaneController } from './use-terminal-pane-controller'
-const mocks = vi.hoisted(() => ({
-  detect: vi.fn(),
-  rpc: vi.fn(),
-  platform: vi.fn(),
-  driver: vi.fn(),
-  seed: vi.fn(),
-  startup: vi.fn(),
-  state: {
-    settings: {},
-    pendingPtyShutdownIds: {} as Record<string, number>,
-    suppressedPtyExitIds: {},
-    ptyIdsByTabId: {},
-    isPtyShutdownPending: (ptyId: string): boolean =>
-      (mocks.state.pendingPtyShutdownIds[ptyId] ?? 0) > 0,
-    agentStatusByPaneKey: {},
-    suppressPtyExit: vi.fn(),
-    consumeSuppressedPtyExit: vi.fn(),
-    clearTabPtyId: vi.fn((_tabId: string, ptyId: string) => {
-      if (mocks.state.isPtyShutdownPending(ptyId)) {
-        throw new Error('Cannot clear a terminal binding while shutdown verification is pending')
-      }
-    }),
-    clearNativeChatLaunchDraft: vi.fn(),
-    clearNativeChatLaunchPrompt: vi.fn(),
-    dropAgentStatus: vi.fn(),
-    clearSleepingAgentSession: vi.fn()
+const mocks = vi.hoisted(() => {
+  const pendingPtyShutdownIds: Record<string, number> = {}
+  return {
+    detect: vi.fn(),
+    rpc: vi.fn(),
+    platform: vi.fn(),
+    driver: vi.fn(),
+    seed: vi.fn(),
+    startup: vi.fn(),
+    state: {
+      settings: {},
+      pendingPtyShutdownIds,
+      suppressedPtyExitIds: {},
+      ptyIdsByTabId: {},
+      isPtyShutdownPending: (ptyId: string): boolean =>
+        (mocks.state.pendingPtyShutdownIds[ptyId] ?? 0) > 0,
+      agentStatusByPaneKey: {},
+      suppressPtyExit: vi.fn(),
+      consumeSuppressedPtyExit: vi.fn(),
+      clearTabPtyId: vi.fn((_tabId: string, ptyId: string) => {
+        if (mocks.state.isPtyShutdownPending(ptyId)) {
+          throw new Error('Cannot clear a terminal binding while shutdown verification is pending')
+        }
+      }),
+      clearNativeChatLaunchDraft: vi.fn(),
+      clearNativeChatLaunchPrompt: vi.fn(),
+      dropAgentStatus: vi.fn(),
+      clearSleepingAgentSession: vi.fn()
+    }
   }
-}))
+})
 vi.mock('@/store', () => ({
   useAppStore: {
     getState: () => mocks.state,
@@ -67,6 +70,7 @@ function fixture(ptyId = 'pty-old') {
   const restart = vi.fn(async () => {
     currentPtyId = 'replacement-pty'
   })
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: a provider restart reads only these controller fields; the rest stay unset.
   const controller = {
     chatPane: { id: 1, leafId },
     chatPanePtyId: ptyId,

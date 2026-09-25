@@ -30,6 +30,7 @@ import {
   authenticateAcpConnection
 } from './acp-session-identity'
 import { answerAcpStructuredPrompt } from './acp-structured-prompt-answer'
+import { AcpSessionStartResultSchema, parseAcpFrame } from './acp-wire-schemas'
 
 export type AcpStructuredSessionAdapterDeps = {
   openConnection?: typeof openAcpJsonRpcConnection
@@ -151,16 +152,19 @@ export class AcpStructuredSessionAdapter implements StructuredAgentSessionAdapte
     }
     const loadedId = acpResumeSessionId(input.identity)
     const useLoad = Boolean(loadedId && connection.initialize.agentCapabilities?.loadSession)
-    const created = (await connection.request(
-      useLoad ? 'session/load' : 'session/new',
-      useLoad ? { sessionId: loadedId, cwd, mcpServers: [] } : { cwd, mcpServers: [] }
-    )) as { sessionId?: string; configOptions?: { id?: string; currentValue?: unknown }[] }
-    const acpSessionId = created.sessionId ?? loadedId
+    const created = parseAcpFrame(
+      AcpSessionStartResultSchema,
+      await connection.request(
+        useLoad ? 'session/load' : 'session/new',
+        useLoad ? { sessionId: loadedId, cwd, mcpServers: [] } : { cwd, mcpServers: [] }
+      )
+    )
+    const acpSessionId = created?.sessionId ?? loadedId
     if (!acpSessionId) {
       await connection.close()
       throw new Error('ACP session/new did not return a session id')
     }
-    const config = indexAcpConfigOptions(created.configOptions ?? [])
+    const config = indexAcpConfigOptions(created?.configOptions ?? [])
     this.sessions.set(input.identity.sessionId, {
       connection,
       acpSessionId,

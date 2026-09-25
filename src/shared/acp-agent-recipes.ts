@@ -12,7 +12,7 @@ export type AcpSpawnRecipe = {
 export function isAcpStructuredAgent(
   agent: string | null | undefined
 ): agent is AcpStructuredAgent {
-  return agent != null && (ACP_STRUCTURED_AGENTS as readonly string[]).includes(agent)
+  return ACP_STRUCTURED_AGENTS.some((entry) => entry === agent)
 }
 
 export function acpHandleProvider(agent: string): 'claude' | 'codex' | 'grok' | 'cursor' | null {

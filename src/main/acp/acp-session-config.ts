@@ -1,4 +1,5 @@
 import type { AgentSessionOptionsResult } from '../../shared/agent-session-wire'
+import { AcpConfigOptionsResultSchema, parseAcpFrame } from './acp-wire-schemas'
 
 export type AcpConfigOption = {
   id?: string
@@ -43,6 +44,8 @@ function isEffortOption(option: AcpConfigOption): boolean {
 function isModeOption(option: AcpConfigOption): boolean {
   return option.category === 'mode' || option.id === 'mode' || /mode/i.test(option.id ?? '')
 }
+
+const NO_EFFORTS: AgentSessionOptionsResult['models'][number]['efforts'] = []
 
 export function indexAcpConfigOptions(configOptions: AcpConfigOption[]): AcpConfigIndex {
   const values = new Map<string, string>()
@@ -94,7 +97,7 @@ export function indexAcpConfigOptions(configOptions: AcpConfigOption[]): AcpConf
           isDefault: choice.id === currentModel,
           ...(effortChoices.length > 0
             ? { defaultEffort: currentEffort ?? effortChoices[0]?.value, efforts: effortChoices }
-            : { efforts: [] as AgentSessionOptionsResult['models'][number]['efforts'] })
+            : { efforts: NO_EFFORTS })
         }))
       : currentModel
         ? [
@@ -142,11 +145,14 @@ export async function applyAcpSessionOption(input: {
       modeId: input.value
     })
   } else {
-    const updated = (await input.connection.request('session/set_config_option', {
-      sessionId: input.acpSessionId,
-      configId,
-      value: input.value
-    })) as { configOptions?: AcpConfigOption[] }
+    const updated = parseAcpFrame(
+      AcpConfigOptionsResultSchema,
+      await input.connection.request('session/set_config_option', {
+        sessionId: input.acpSessionId,
+        configId,
+        value: input.value
+      })
+    )
     if (updated?.configOptions) {
       input.config = indexAcpConfigOptions(updated.configOptions)
     }

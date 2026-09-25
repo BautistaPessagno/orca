@@ -8,19 +8,17 @@ import {
   readBoundedChatImage
 } from '../native-chat/chat-image-attachment'
 import type { AcpJsonRpcServerRequest } from './acp-jsonrpc-connection'
+import {
+  AcpPermissionParamsSchema,
+  AcpPlanParamsSchema,
+  AcpQuestionParamsSchema,
+  AcpSessionUpdateParamsSchema,
+  parseAcpFrame
+} from './acp-wire-schemas'
 
 export type AcpPendingPrompt = { id: number | string; kind: 'approval' | 'question' | 'plan' }
 
 type AcpImageBudget = { count: number; bytes: number }
-
-type SessionUpdate = {
-  sessionUpdate?: string
-  content?: { type?: string; text?: string }
-  toolCallId?: string
-  title?: string
-  status?: string
-  rawInput?: unknown
-}
 
 export async function acpPromptBlocks(
   body: { blocks: { type: string; text?: string; path?: string }[] },
@@ -111,7 +109,7 @@ export function applyAcpSessionUpdate(input: {
   if (!input.events) {
     return
   }
-  const update = (input.params as { update?: SessionUpdate }).update
+  const update = parseAcpFrame(AcpSessionUpdateParamsSchema, input.params)?.update
   if (!update) {
     return
   }
@@ -174,10 +172,7 @@ export function applyAcpServerRequest(input: {
     return 'ignored'
   }
   if (input.request.method === 'session/request_permission') {
-    const params = (input.request.params ?? {}) as {
-      toolCall?: { title?: string; toolCallId?: string }
-      options?: { optionId?: string; name?: string }[]
-    }
+    const params = parseAcpFrame(AcpPermissionParamsSchema, input.request.params) ?? {}
     const itemId = params.toolCall?.toolCallId ?? `perm-${String(input.request.id)}`
     input.pending.set(itemId, { id: input.request.id, kind: 'approval' })
     const options = (params.options ?? []).map((option) => ({
@@ -200,11 +195,7 @@ export function applyAcpServerRequest(input: {
     return 'handled'
   }
   if (input.request.method === 'cursor/ask_question') {
-    const params = (input.request.params ?? {}) as {
-      questions?: { id?: string; prompt?: string; options?: { id?: string; label?: string }[] }[]
-      question?: string
-      options?: { id?: string; label?: string }[]
-    }
+    const params = parseAcpFrame(AcpQuestionParamsSchema, input.request.params) ?? {}
     const question = params.questions?.[0]
     const itemId = question?.id ?? `question-${String(input.request.id)}`
     input.pending.set(itemId, { id: input.request.id, kind: 'question' })
@@ -221,7 +212,7 @@ export function applyAcpServerRequest(input: {
     return 'handled'
   }
   if (input.request.method === 'cursor/create_plan') {
-    const params = (input.request.params ?? {}) as { plan?: string; title?: string; name?: string }
+    const params = parseAcpFrame(AcpPlanParamsSchema, input.request.params) ?? {}
     const itemId = `plan-${String(input.request.id)}`
     input.pending.set(itemId, { id: input.request.id, kind: 'plan' })
     appendPrompt(input, itemId, {

@@ -253,11 +253,11 @@ describe('connectPanePty', () => {
       launchAgent: 'grok',
       launchConfig: { agentCommand: 'grok', agentArgs: '--model grok-4.6', agentEnv: {} }
     }
-    const binding = connectPanePty(
-      createPane(1) as never,
-      createManager(1) as never,
-      createDeps({ startup }) as never
-    )
+    const pane = createPane(1)
+    const manager = createManager(1)
+    const deps = createDeps({ startup })
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the same partial pane, manager and deps fixtures every connectPanePty case here passes.
+    const binding = connectPanePty(pane as never, manager as never, deps as never)
     await flushAsyncTicks(20)
     expect(createdTransportOptions[0]).toMatchObject({
       command: startup.command,

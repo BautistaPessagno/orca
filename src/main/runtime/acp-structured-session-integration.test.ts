@@ -6,6 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { z } from 'zod'
 import type {
   AcpJsonRpcConnection,
   AcpJsonRpcConnectionHandlers,
@@ -51,7 +52,7 @@ function fakeAcp(script?: {
   live: () => FakeConnection
 } {
   const connections: FakeConnection[] = []
-  const openConnection = (async (launch, handlers = {}) => {
+  const openConnection: typeof openAcpJsonRpcConnection = async (launch, handlers = {}) => {
     const connection: FakeConnection = {
       launch,
       handlers,
@@ -113,7 +114,7 @@ function fakeAcp(script?: {
               {
                 id: 'reasoning_effort',
                 category: 'thought_level',
-                currentValue: (params as { value?: string }).value ?? 'high',
+                currentValue: typeof params?.value === 'string' ? params.value : 'high',
                 options: [
                   { value: 'high', name: 'High' },
                   { value: 'xhigh', name: 'Extra high' }
@@ -138,7 +139,7 @@ function fakeAcp(script?: {
     }
     connections.push(connection)
     return connection
-  }) as typeof openAcpJsonRpcConnection
+  }
   return {
     connections,
     openConnection,
@@ -213,12 +214,24 @@ async function call(method: string, params: unknown): Promise<RpcResponse> {
   return first
 }
 
-async function ok<T>(method: string, params: unknown): Promise<T> {
+const RpcResultSchema = z.object({
+  result: z.object({
+    ok: z.boolean(),
+    value: z.unknown().optional(),
+    refusal: z.unknown().optional()
+  })
+})
+
+async function ok<T extends z.ZodType>(
+  method: string,
+  params: unknown,
+  value: T
+): Promise<z.infer<T>> {
   const response = await call(method, params)
   expect(response, `${method} failed: ${JSON.stringify(response)}`).toMatchObject({ ok: true })
-  const result = (response as { result: { ok: boolean; value?: T; refusal?: unknown } }).result
+  const { result } = RpcResultSchema.parse(response)
   expect(result, `${method} refused: ${JSON.stringify(result.refusal)}`).toMatchObject({ ok: true })
-  return result.value as T
+  return value.parse(result.value)
 }
 
 async function subscribe(requestId: string): Promise<AgentSessionSubscribeEvent[]> {
@@ -231,6 +244,7 @@ async function subscribe(requestId: string): Promise<AgentSessionSubscribeEvent[
       params: { sessionId: SESSION }
     },
     (raw) => {
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the frame is this dispatcher's own serialized AgentSessionSubscribeEvent.
       const response = JSON.parse(raw) as { ok: boolean; result?: AgentSessionSubscribeEvent }
       if (response.ok && response.result) {
         frames.push(response.result)
@@ -301,6 +315,7 @@ beforeEach(async () => {
     }))
   }
   dispatcher = new RpcDispatcher({
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the dispatcher reaches only the runtime members stubbed above.
     runtime: runtime as unknown as OrcaRuntimeService,
     methods: STRUCTURED_AGENT_SESSION_METHODS
   })
@@ -313,9 +328,10 @@ afterEach(async () => {
 
 describe('a structured ACP session over agentSession.*', () => {
   it('creates, sends, streams, sets effort, answers permission, and cancels', async () => {
-    const created = await ok<{ fence: number; page: { items: unknown[] } }>(
+    const created = await ok(
       'agentSession.create',
-      createIntentParams('grok')
+      createIntentParams('grok'),
+      z.object({ fence: z.number(), page: z.object({ items: z.array(z.unknown()) }) })
     )
     expect(created.page.items).toEqual([])
     expect(acp.live().launch.cwd).toBe(`/repos/${WORKSPACE}`)
@@ -332,22 +348,30 @@ describe('a structured ACP session over agentSession.*', () => {
         current: { model: 'grok-4.6', effort: 'high' }
       }
     })
-    await ok('agentSession.setOption', {
-      envelope: envelope(
-        'agentSession.setOption',
-        { key: 'effort', value: 'xhigh' },
-        created.fence
-      ),
-      key: 'effort',
-      value: 'xhigh'
-    })
+    await ok(
+      'agentSession.setOption',
+      {
+        envelope: envelope(
+          'agentSession.setOption',
+          { key: 'effort', value: 'xhigh' },
+          created.fence
+        ),
+        key: 'effort',
+        value: 'xhigh'
+      },
+      z.unknown()
+    )
     expect(acp.live().calls.some((call) => call.method === 'session/set_config_option')).toBe(true)
 
     const body = { kind: 'message', role: 'user', blocks: [{ type: 'text', text: 'hi' }] }
-    const sent = await ok<{ submission: { dispatchState: string } }>('agentSession.send', {
-      envelope: envelope('agentSession.send', { body }, created.fence),
-      body
-    })
+    const sent = await ok(
+      'agentSession.send',
+      {
+        envelope: envelope('agentSession.send', { body }, created.fence),
+        body
+      },
+      z.object({ submission: z.object({ dispatchState: z.string() }) })
+    )
     expect(sent.submission.dispatchState).toBe('accepted')
     await drainStreamedEvents()
     expect(itemsOf(stream).map(textOf).filter(Boolean)).toEqual(['hi', 'Hello from ACP.'])
@@ -363,28 +387,36 @@ describe('a structured ACP session over agentSession.*', () => {
     await drainStreamedEvents()
     const approval = itemsOf(stream).find((item) => item.body?.kind === 'approval')
     expect(approval?.body).toMatchObject({ title: 'Read package.json' })
-    await ok('agentSession.respondToApproval', {
-      envelope: envelope(
-        'agentSession.respondTo:approval',
-        {
-          itemId: approval?.itemId,
-          expectedRevision: approval?.revision,
-          optionId: 'allow-once'
-        },
-        created.fence
-      ),
-      itemId: approval?.itemId,
-      expectedRevision: approval?.revision,
-      optionId: 'allow-once'
-    })
+    await ok(
+      'agentSession.respondToApproval',
+      {
+        envelope: envelope(
+          'agentSession.respondTo:approval',
+          {
+            itemId: approval?.itemId,
+            expectedRevision: approval?.revision,
+            optionId: 'allow-once'
+          },
+          created.fence
+        ),
+        itemId: approval?.itemId,
+        expectedRevision: approval?.revision,
+        optionId: 'allow-once'
+      },
+      z.unknown()
+    )
     expect(acp.live().replies).toEqual([
       { id: 11, result: { outcome: { outcome: 'selected', optionId: 'allow-once' } } }
     ])
 
-    const cancelled = await ok<{ cancelled: boolean }>('agentSession.cancel', {
-      envelope: envelope('agentSession.cancel', { turnId: 'acp-turn-1' }, created.fence),
-      turnId: 'acp-turn-1'
-    })
+    const cancelled = await ok(
+      'agentSession.cancel',
+      {
+        envelope: envelope('agentSession.cancel', { turnId: 'acp-turn-1' }, created.fence),
+        turnId: 'acp-turn-1'
+      },
+      z.object({ cancelled: z.boolean() })
+    )
     expect(cancelled.cancelled).toBe(true)
     expect(acp.live().calls.at(-1)).toMatchObject({ method: 'session/cancel' })
   })
@@ -421,26 +453,39 @@ describe('a structured ACP session over agentSession.*', () => {
       }))
     }
     dispatcher = new RpcDispatcher({
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the dispatcher reaches only the runtime members stubbed above.
       runtime: runtime as unknown as OrcaRuntimeService,
       methods: STRUCTURED_AGENT_SESSION_METHODS
     })
-    await ok('agentSession.create', createIntentParams('cursor'))
+    await ok('agentSession.create', createIntentParams('cursor'), z.unknown())
     expect(acp.live().calls.map((call) => call.method)).toEqual(['authenticate', 'session/new'])
     expect(acp.live().calls[0]?.params).toEqual({ methodId: 'cursor_login' })
   })
 
   it('switches grok to claude on the same session without dropping the journal', async () => {
-    const created = await ok<{ fence: number }>('agentSession.create', createIntentParams('grok'))
+    const created = await ok(
+      'agentSession.create',
+      createIntentParams('grok'),
+      z.object({ fence: z.number() })
+    )
     const body = { kind: 'message', role: 'user', blocks: [{ type: 'text', text: 'hi' }] }
-    await ok('agentSession.send', {
-      envelope: envelope('agentSession.send', { body }, created.fence),
-      body
-    })
+    await ok(
+      'agentSession.send',
+      {
+        envelope: envelope('agentSession.send', { body }, created.fence),
+        body
+      },
+      z.unknown()
+    )
     const fields = { agent: 'claude' as const, model: 'claude-sonnet-5' }
-    const switched = await ok<{ agent: string }>('agentSession.switchProvider', {
-      envelope: envelope('agentSession.switchProvider', fields, created.fence),
-      ...fields
-    })
+    const switched = await ok(
+      'agentSession.switchProvider',
+      {
+        envelope: envelope('agentSession.switchProvider', fields, created.fence),
+        ...fields
+      },
+      z.object({ agent: z.string() })
+    )
     expect(switched.agent).toBe('claude')
     expect(acp.connections[0]?.closed).toBe(true)
     expect(acp.connections).toHaveLength(1)

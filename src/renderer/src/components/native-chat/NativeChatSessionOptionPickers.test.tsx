@@ -661,16 +661,12 @@ describe('NativeChatSessionOptionPickers', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Model Grok 4.6' }))
     const menu = await screen.findByRole('dialog')
     expect(
-      within(within(menu).getByText('Grok 4.6').closest('[cmdk-item]') as HTMLElement)
-        .getByTestId('agent-icon')
-        .getAttribute('data-agent')
+      within(modelRow(menu, 'Grok 4.6')).getByTestId('agent-icon').getAttribute('data-agent')
     ).toBe('grok')
     expect(
-      within(within(menu).getByText('Sonnet').closest('[cmdk-item]') as HTMLElement)
-        .getByTestId('agent-icon')
-        .getAttribute('data-agent')
+      within(modelRow(menu, 'Sonnet')).getByTestId('agent-icon').getAttribute('data-agent')
     ).toBe('claude')
-    const grokRow = within(menu).getByText('Grok 4.6').closest('[cmdk-item]') as HTMLElement
+    const grokRow = modelRow(menu, 'Grok 4.6')
     const grokIcon = within(grokRow).getByTestId('agent-icon')
     expect(
       grokIcon.compareDocumentPosition(within(grokRow).getByText('Grok 4.6')) &
@@ -685,3 +681,11 @@ describe('NativeChatSessionOptionPickers', () => {
     expect(screen.queryByTestId('agent-icon')).toBeNull()
   })
 })
+
+function modelRow(menu: HTMLElement, label: string): HTMLElement {
+  const row = within(menu).getByText(label).closest('[cmdk-item]')
+  if (!(row instanceof HTMLElement)) {
+    throw new Error(`no model row for ${label}`)
+  }
+  return row
+}

@@ -1,17 +1,23 @@
-import { EventEmitter } from 'node:events'
+import { ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { PassThrough } from 'node:stream'
 import { describe, expect, it } from 'vitest'
 
 import { AcpJsonRpcRequestError, openAcpJsonRpcConnection } from './acp-jsonrpc-connection'
 
-function fakeAcpChild(script?: { initialize?: 'ok' | 'error' }): {
-  child: EventEmitter & {
-    pid: number | undefined
-    stdin: PassThrough
-    stdout: PassThrough
-    stderr: PassThrough
-    kill: () => boolean
+function parseRequest(line: string): { raw: unknown; method?: string; id?: number } {
+  const raw: unknown = JSON.parse(line)
+  if (typeof raw !== 'object' || raw === null) {
+    return { raw }
   }
+  return {
+    raw,
+    ...('method' in raw && typeof raw.method === 'string' ? { method: raw.method } : {}),
+    ...('id' in raw && typeof raw.id === 'number' ? { id: raw.id } : {})
+  }
+}
+
+function fakeAcpChild(script?: { initialize?: 'ok' | 'error' }): {
+  child: ChildProcessWithoutNullStreams & { stdin: PassThrough; stdout: PassThrough }
   requests: unknown[]
 } {
   const stdin = new PassThrough()
@@ -23,8 +29,8 @@ function fakeAcpChild(script?: { initialize?: 'ok' | 'error' }): {
       if (line.trim().length === 0) {
         continue
       }
-      const message = JSON.parse(line) as { method?: string; id?: number }
-      requests.push(message)
+      const message = parseRequest(line)
+      requests.push(message.raw)
       if (message.method === 'initialize' && typeof message.id === 'number') {
         if (script?.initialize === 'error') {
           stdout.write(
@@ -46,11 +52,12 @@ function fakeAcpChild(script?: { initialize?: 'ok' | 'error' }): {
       }
     }
   })
-  const child = Object.assign(new EventEmitter(), {
-    pid: undefined,
+  const stdio: ChildProcessWithoutNullStreams['stdio'] = [stdin, stdout, stderr, null, null]
+  const child = Object.assign(new ChildProcess(), {
     stdin,
     stdout,
     stderr,
+    stdio,
     kill: () => {
       child.emit('exit', 0, null)
       return true
@@ -67,7 +74,7 @@ describe('ACP JSON-RPC connection', () => {
         if (line.trim().length === 0) {
           continue
         }
-        const message = JSON.parse(line) as { method?: string; id?: number }
+        const message = parseRequest(line)
         if (message.method === 'session/new' && typeof message.id === 'number') {
           fake.child.stdout.write(
             `${JSON.stringify({
@@ -82,7 +89,7 @@ describe('ACP JSON-RPC connection', () => {
     const connection = await openAcpJsonRpcConnection(
       { command: 'grok', args: ['agent', 'stdio'] },
       {},
-      () => fake.child as never
+      () => fake.child
     )
     expect(fake.requests[0]).toMatchObject({ method: 'initialize' })
     expect(connection.initialize).toMatchObject({ protocolVersion: 1 })
@@ -94,7 +101,7 @@ describe('ACP JSON-RPC connection', () => {
   it('fails create when initialize returns an error', async () => {
     const fake = fakeAcpChild({ initialize: 'error' })
     await expect(
-      openAcpJsonRpcConnection({ command: 'missing', args: [] }, {}, () => fake.child as never)
+      openAcpJsonRpcConnection({ command: 'missing', args: [] }, {}, () => fake.child)
     ).rejects.toBeInstanceOf(AcpJsonRpcRequestError)
   })
 
@@ -103,7 +110,7 @@ describe('ACP JSON-RPC connection', () => {
     const connection = await openAcpJsonRpcConnection(
       { command: 'grok', args: ['agent', 'stdio'] },
       {},
-      () => fake.child as never
+      () => fake.child
     )
     fake.child.stdin.destroy()
     await expect(

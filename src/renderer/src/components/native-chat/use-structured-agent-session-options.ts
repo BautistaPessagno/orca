@@ -70,7 +70,13 @@ export function useStructuredAgentSessionOptions(args: {
     []
   )
   const optionCatalog = useMemo(() => getAgentSessionOptionCatalog(agent), [agent])
-  const [liveOptions, setLiveOptions] = useState<AgentSessionOptionsResult | null>(null)
+  // Keyed so a read from a previous session, agent or fence is never shown.
+  const liveOptionsKey = `${agent}:${sessionId}:${fence}`
+  const [liveOptionsEntry, setLiveOptionsEntry] = useState<{
+    key: string
+    options: AgentSessionOptionsResult
+  } | null>(null)
+  const liveOptions = liveOptionsEntry?.key === liveOptionsKey ? liveOptionsEntry.options : null
 
   useEffect(() => {
     const next = createStructuredAgentSessionOptionState(agent)
@@ -79,7 +85,6 @@ export function useStructuredAgentSessionOptions(args: {
     optionStateRef.current = next
     activeOptionRecordRef.current = next.record
     setOptionState(next)
-    setLiveOptions(null)
   }, [agent, fence, sessionId, transportEnabled])
 
   const optionsReadRef = useRef<CoalescedPollRunner | null>(null)
@@ -97,7 +102,7 @@ export function useStructuredAgentSessionOptions(args: {
         { sessionId }
       )
       if (!stale && optionMutationGeneration.current === readGeneration) {
-        setLiveOptions(result)
+        setLiveOptionsEntry({ key: liveOptionsKey, options: result })
         setConversationSupport({
           sessionId,
           commands: result.conversationCommands ?? [],
@@ -117,7 +122,16 @@ export function useStructuredAgentSessionOptions(args: {
       stale = true
       runner.dispose()
     }
-  }, [fence, optionCatalog, providerVisible, sessionId, target, turnId, updateOptionState])
+  }, [
+    fence,
+    liveOptionsKey,
+    optionCatalog,
+    providerVisible,
+    sessionId,
+    target,
+    turnId,
+    updateOptionState
+  ])
 
   // Reads share the session's host queue with sends and interrupts, so a burst of
   // missed revisions keeps one read in flight and at most one behind it.
